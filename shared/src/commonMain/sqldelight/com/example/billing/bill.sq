@@ -1,0 +1,24 @@
+-- Flutter ke "bills" table jaisa hi. Har bill ek row hai.
+-- "data" column me rooms+items ka JSON text save hota hai.
+CREATE TABLE IF NOT EXISTS BillEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    customer TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    data TEXT NOT NULL,
+    date TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM BillEntity ORDER BY id DESC;
+
+insertBill:
+INSERT INTO BillEntity(customer, phone, data, date) VALUES (?, ?, ?, ?);
+
+updateBill:
+UPDATE BillEntity SET customer = ?, phone = ?, data = ? WHERE id = ?;
+
+deleteBill:
+DELETE FROM BillEntity WHERE id = ?;
+
+deleteAll:
+DELETE FROM BillEntity;

@@ -1,0 +1,28 @@
+package com.example.billing.data
+
+val masterItems: List<String> = listOf(
+    "Fabric curtain",
+    "Stitching",
+    "Lining",
+    "Shafoon",
+    "Shafoon Stitching",
+    "Blind fabric",
+    "Blind fabrics Stitching",
+    "Blind Lining",
+    "Fitting",
+    "Tasali",
+    "Tasal",
+    "Box fabric",
+    "Box",
+    "Pipe",
+    "Bracket",
+    "Belt",
+    "Belt hook",
+    "Ring",
+    "Lase",
+    "Pelmet fabric",
+    "Pelmet stitching",
+    "Pelmet lace",
+    "Fabric Print",
+    "Railing",
+)

@@ -1,0 +1,40 @@
+-- Users aur app ki chhoti settings (license ka saved status) yahan rehti hain.
+-- Sab "IF NOT EXISTS" hain, is liye purane database me bhi naye table ban jate hain.
+
+CREATE TABLE IF NOT EXISTS UserEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    salt TEXT NOT NULL,
+    passwordHash TEXT NOT NULL,
+    isActive INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS AppSetting (
+    settingKey TEXT NOT NULL PRIMARY KEY,
+    settingValue TEXT NOT NULL
+);
+
+selectAllUsers:
+SELECT * FROM UserEntity ORDER BY username;
+
+selectUserByName:
+SELECT * FROM UserEntity WHERE username = ?;
+
+insertUser:
+INSERT INTO UserEntity(username, salt, passwordHash, isActive, createdAt) VALUES (?, ?, ?, 1, ?);
+
+updateUserPassword:
+UPDATE UserEntity SET salt = ?, passwordHash = ? WHERE id = ?;
+
+setUserActive:
+UPDATE UserEntity SET isActive = ? WHERE id = ?;
+
+deleteUser:
+DELETE FROM UserEntity WHERE id = ?;
+
+getSetting:
+SELECT settingValue FROM AppSetting WHERE settingKey = ?;
+
+putSetting:
+INSERT OR REPLACE INTO AppSetting(settingKey, settingValue) VALUES (?, ?);
