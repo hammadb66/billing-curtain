@@ -19,6 +19,7 @@ class AppSettings(database: BillingDatabase) {
 
 object SettingKeys {
     const val SHOP_ID = "shopId"
+    const val SHOP_NAME = "shopName"
     const val LIC_OK = "licenseOk"
     const val LIC_CHECKED_AT = "licenseCheckedAt"
     const val LIC_MESSAGE = "licenseMessage"

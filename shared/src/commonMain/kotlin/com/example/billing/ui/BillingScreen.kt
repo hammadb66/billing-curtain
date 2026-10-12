@@ -80,6 +80,7 @@ import com.example.billing.model.ItemState
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
+import com.example.billing.utils.Branding
 import com.example.billing.utils.displayDate
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.nowIso
@@ -101,6 +102,11 @@ fun BillingScreen(
     var roomToDelete by remember { mutableStateOf<RoomState?>(null) }
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
+
+    // Total ke neeche chhota sa khulasa: kitne room aur kitne items bhare gaye
+    val filledItems = form.rooms.sumOf { r -> r.items.count { it.total > 0 } }
+    val summary = "${form.rooms.size} Room  |  $filledItems Items"
+
     fun printAndSave() {
         if (isPrinting) return
 
@@ -178,7 +184,8 @@ fun BillingScreen(
                             fontWeight = FontWeight.Bold,
                             color = AppGreen,
                         )
-                        Spacer(Modifier.height(20.dp))
+                        Text("by ${Branding.COMPANY}", fontSize = 11.sp, color = Color.Gray)
+                        Spacer(Modifier.height(16.dp))
 
                         Column(
                             Modifier
@@ -190,11 +197,14 @@ fun BillingScreen(
 
                         ActionBlock(
                             total = form.grandTotal,
+                            summary = summary,
                             compact = false,
                             enabled = !isPrinting,
                             onPrint = { printAndSave() },
                             onReset = { confirmReset = true },
                         )
+                        Spacer(Modifier.height(8.dp))
+                        BrandFooter()
                     }
                     LazyColumn(
                         Modifier.weight(1f).fillMaxHeight(),
@@ -221,11 +231,13 @@ fun BillingScreen(
                         }
                         item { HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting) }
                         roomItems(form) { roomToDelete = it }
+                        item { BrandFooter(Modifier.padding(top = 8.dp), centered = true) }
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
                         Column(Modifier.padding(12.dp)) {
                             ActionBlock(
                                 total = form.grandTotal,
+                                summary = summary,
                                 compact = true,
                                 enabled = !isPrinting,
                                 onPrint = { printAndSave() },
@@ -354,7 +366,11 @@ private fun HeaderBlock(
             Icon(Icons.Default.Person, contentDescription = null, tint = AppGreen)
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
-                Text("Logged in", fontSize = 11.sp, color = Color.Gray)
+                Text(
+                    if (isDeveloper) "Developer mode" else "Logged in",
+                    fontSize = 11.sp,
+                    color = if (isDeveloper) Color(0xFFE65100) else Color.Gray,
+                )
                 Text(userName, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             val accent = if (isDeveloper) AppGreen else Color.Red
@@ -375,6 +391,7 @@ private fun HeaderBlock(
 @Composable
 private fun ActionBlock(
     total: Double,
+    summary: String,
     compact: Boolean,
     enabled: Boolean,
     onPrint: () -> Unit,
@@ -389,6 +406,7 @@ private fun ActionBlock(
             Column(Modifier.weight(1f)) {
                 Text("GRAND TOTAL", fontSize = 11.sp, color = AppGreen)
                 Text("Rs ${formatMoney(total)}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(summary, fontSize = 10.sp, color = Color.Gray)
             }
             TextButton(onClick = onReset, enabled = enabled) { Text("Reset", color = Color.Red) }
             Button(
@@ -404,6 +422,7 @@ private fun ActionBlock(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             TotalCard(total)
+            Text(summary, fontSize = 12.sp, color = Color.Gray)
             Button(
                 onClick = onPrint,
                 enabled = enabled,
@@ -417,6 +436,9 @@ private fun ActionBlock(
 
 @Composable
 private fun RoomCard(index: Int, room: RoomState, onDelete: (RoomState) -> Unit) {
+    var onlyFilled by remember { mutableStateOf(false) }
+    val filled = room.items.count { it.total > 0 }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(12.dp),
@@ -457,6 +479,10 @@ private fun RoomCard(index: Int, room: RoomState, onDelete: (RoomState) -> Unit)
                         }
                     },
                 )
+                if (filled > 0) {
+                    Text("$filled items", fontSize = 12.sp, color = Color.Gray)
+                    Spacer(Modifier.width(10.dp))
+                }
                 Text(
                     "Rs ${formatMoney(room.total)}",
                     color = AppGreen,
@@ -490,7 +516,23 @@ private fun RoomCard(index: Int, room: RoomState, onDelete: (RoomState) -> Unit)
                         )
                     }
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    room.items.forEach { item -> ItemRow(item) }
+
+                    val shown = if (onlyFilled) {
+                        room.items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
+                    } else {
+                        room.items
+                    }
+                    if (onlyFilled && shown.isEmpty()) {
+                        Text("Abhi koi item nahi bhara.", fontSize = 13.sp, color = Color.Gray)
+                    }
+                    shown.forEach { item -> ItemRow(item) }
+
+                    TextButton(onClick = { onlyFilled = !onlyFilled }, modifier = Modifier.align(Alignment.End)) {
+                        Text(
+                            if (onlyFilled) "Sab items dikhayen" else "Sirf bhari hui items dikhayen",
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
         }
@@ -499,8 +541,12 @@ private fun RoomCard(index: Int, room: RoomState, onDelete: (RoomState) -> Unit)
 
 @Composable
 private fun ItemRow(item: ItemState) {
+    val filled = item.total > 0
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        Modifier
+            .fillMaxWidth()
+            .background(if (filled) Color(0xFFF1F8E9) else Color.Transparent, RoundedCornerShape(6.dp))
+            .padding(vertical = 3.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(item.name, Modifier.weight(3f), fontSize = 14.sp)

@@ -67,6 +67,8 @@ private fun AuthCard(
                 Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AppGreen)
                 if (subtitle != null) Text(subtitle, fontSize = 14.sp, color = Color.Gray)
                 content()
+                Spacer(Modifier.height(4.dp))
+                BrandFooter(centered = true)
             }
         }
     }

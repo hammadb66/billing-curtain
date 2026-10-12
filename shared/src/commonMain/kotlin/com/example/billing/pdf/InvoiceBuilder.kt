@@ -2,8 +2,8 @@ package com.example.billing.pdf
 
 import com.example.billing.model.RoomData
 import com.example.billing.utils.formatMoney
+import com.example.billing.utils.Branding
 import com.example.billing.utils.formatQty
-import kotlin.collections.plusAssign
 
 /** Naye bill aur History dono ka PDF isi aik function se banta hai. */
 fun buildInvoiceRows(
@@ -13,9 +13,13 @@ fun buildInvoiceRows(
     rooms: List<RoomData>,
 ): List<PdfRow> {
     val rows = mutableListOf<PdfRow>()
+    // Dukaan ka naam bill ke sab se upar (license ke shopName se)
+    if (Branding.licensedTo.isNotBlank()) {
+        rows += PdfRow(left = Branding.licensedTo, bold = true, fontSize = 18f)
+    }
     rows += PdfRow(left = "INVOICE", right = "Date: $date", bold = true, fontSize = 22f)
     rows += PdfRow(kind = RowKind.LINE)
-    rows += PdfRow(left = "Customer: $customer", bold = true, fontSize = 14f)
+    rows += PdfRow(left = "Customer Name: $customer", bold = true, fontSize = 14f)
     rows += PdfRow(left = "Customer Number: $phone", bold = true, fontSize = 14f)
     rows += PdfRow(kind = RowKind.SPACE)
 
@@ -45,5 +49,11 @@ fun buildInvoiceRows(
 
     rows += PdfRow(kind = RowKind.LINE)
     rows += PdfRow(right = "GRAND TOTAL: Rs ${formatMoney(grand)}", bold = true, fontSize = 16f)
+
+    // Chhota sa "Software by ..." (band karna ho to Branding.SHOW_ON_INVOICE = false)
+    if (Branding.SHOW_ON_INVOICE) {
+        rows += PdfRow(kind = RowKind.SPACE)
+        rows += PdfRow(left = "Software by ${Branding.COMPANY}  |  Contact: ${Branding.PHONE}", fontSize = 9f)
+    }
     return rows
 }

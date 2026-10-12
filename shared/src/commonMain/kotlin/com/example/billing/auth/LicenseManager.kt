@@ -18,7 +18,7 @@ sealed interface LicenseState {
 
 /** Internet par ek dafa poochne ka nateeja */
 private sealed interface Online {
-    data object Ok : Online
+    data class Ok(val shopName: String) : Online
     data object NotFound : Online
     data class Denied(val message: String) : Online
     data class Unreachable(val reason: String) : Online
@@ -42,6 +42,9 @@ class LicenseManager(
     private fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
 
     suspend fun currentShopId(): String? = settings.get(SettingKeys.SHOP_ID)
+
+    /** Customer (dukaan) ka naam, jo aakhri dafa Firebase se mila */
+    suspend fun currentShopName(): String = settings.get(SettingKeys.SHOP_NAME) ?: ""
 
     // ---------- local saved status (mohar ke saath) ----------
 
@@ -82,7 +85,7 @@ class LicenseManager(
                 )
             }
             firebase.touchDevice(shopId, deviceId, now)
-            return Online.Ok
+            return Online.Ok(lic.shopName)
         }
 
         val used = devices.values.count { !it.blocked }
@@ -95,7 +98,7 @@ class LicenseManager(
             )
         }
         val problem = firebase.registerDevice(shopId, deviceId, device.label, now)
-        return if (problem == null) Online.Ok else Online.Unreachable("laptop darj nahi hua: $problem")
+        return if (problem == null) Online.Ok(lic.shopName) else Online.Unreachable("laptop darj nahi hua: $problem")
     }
 
     // ---------- software khulte waqt ----------
@@ -103,8 +106,9 @@ class LicenseManager(
     suspend fun evaluate(): LicenseState {
         val shopId = currentShopId() ?: return LicenseState.NeedActivation
         return when (val r = checkOnline(shopId)) {
-            Online.Ok -> {
+            is Online.Ok -> {
                 saveResult(shopId, true, "")
+                settings.put(SettingKeys.SHOP_NAME, r.shopName)
                 LicenseState.Allowed(offline = false)
             }
             is Online.Denied -> {
@@ -150,8 +154,9 @@ class LicenseManager(
     suspend fun recheck(): LicenseState.Blocked? {
         val shopId = currentShopId() ?: return null
         return when (val r = checkOnline(shopId)) {
-            Online.Ok -> {
+            is Online.Ok -> {
                 saveResult(shopId, true, "")
+                settings.put(SettingKeys.SHOP_NAME, r.shopName)
                 null
             }
             is Online.Denied -> {
@@ -171,8 +176,9 @@ class LicenseManager(
         val code = rawCode.trim()
         if (!isValidShopId(code)) return "Shop code 3 se 40 harf ka ho (sirf a-z, A-Z, 0-9, _ ya -)"
         return when (val r = checkOnline(code)) {
-            Online.Ok -> {
+            is Online.Ok -> {
                 settings.put(SettingKeys.SHOP_ID, code)
+                settings.put(SettingKeys.SHOP_NAME, r.shopName)
                 saveResult(code, true, "")
                 null
             }

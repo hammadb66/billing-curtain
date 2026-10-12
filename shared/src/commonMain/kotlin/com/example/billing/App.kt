@@ -29,6 +29,7 @@ import com.example.billing.ui.CheckingScreen
 import com.example.billing.ui.EditBillScreen
 import com.example.billing.ui.HistoryScreen
 import com.example.billing.ui.LoginScreen
+import com.example.billing.utils.Branding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -77,6 +78,8 @@ fun App(services: AppServices, printer: PdfPrinter, presetShopCode: String? = nu
                     gate = Gate.Login
                 }
             }
+            // "Licensed to: ..." ke liye dukaan ka naam
+            Branding.licensedTo = services.license.currentShopName()
         }
 
         // 1) Software khulte hi license check
@@ -86,12 +89,12 @@ fun App(services: AppServices, printer: PdfPrinter, presetShopCode: String? = nu
         if (gate is Gate.LoggedIn) {
             LaunchedEffect(Unit) {
                 while (true) {
-                    delay(AppConfig.RECHECK_MINUTES * 60_000L)
                     val blocked = services.license.recheck()
                     if (blocked != null) {
                         gate = Gate.Blocked(blocked.message)
                         break
                     }
+                    delay(AppConfig.RECHECK_MINUTES * 60_000L)
                 }
             }
         }
