@@ -6,59 +6,53 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.billing.data.masterItems
 
-
 private var idCounter = 0L
 private fun nextId(): Long = idCounter++
 
 class ItemState(val name: String) {
     var qty by mutableStateOf("")
     var rate by mutableStateOf("")
-
-    val total: Double
-        get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
+    val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
 }
 
 class RoomState {
-    val id: Long = nextId()          // LazyColumn ko "key" chahiye hoti hai
+    val id: Long = nextId()
     var name by mutableStateOf("")
     var expanded by mutableStateOf(true)
-
-    // Har naye room ko master list se bilkul taaza items milte hain
     val items: List<ItemState> = masterItems.map { ItemState(it) }
-
     val total: Double get() = items.sumOf { it.total }
 
-    /** Sirf wo items jin me qty ya rate bhari ho (database/PDF ke liye) */
     fun toRoomData() = RoomData(
         roomName = name.trim(),
-        items = items
-            .filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
-            .map { ItemData(it.name, it.qty, it.rate) },
+        items = items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }.map { ItemData(it.name, it.qty, it.rate) }
     )
 }
 
 class BillingFormState {
     var customer by mutableStateOf("")
     var phone by mutableStateOf("")
+    var discount by mutableStateOf("")       // Naya field: Discount
+    var extraCharges by mutableStateOf("") // Naya field: Extra Charges
     val rooms = mutableStateListOf(RoomState())
 
-    // Ye property khud-ba-khud update hoti hai: koi calculateGrandTotal() nahi chahiye!
-    val grandTotal: Double get() = rooms.sumOf { it.total }
-
-    fun addRoom() { rooms.add(RoomState()) }
-
-    fun removeRoom(room: RoomState) {
-        // Pehla room delete nahi hota (Flutter jaisa)
-        if (rooms.isNotEmpty() && rooms.first() !== room) rooms.remove(room)
+    val grandTotal: Double get() {
+        val raw = rooms.sumOf { it.total }
+        val disc = discount.toDoubleOrNull() ?: 0.0
+        val extra = extraCharges.toDoubleOrNull() ?: 0.0
+        return (raw - disc + extra).coerceAtLeast(0.0)
     }
 
+    fun addRoom() { rooms.add(RoomState()) }
+    fun removeRoom(room: RoomState) {
+        if (rooms.isNotEmpty() && rooms.first() !== room) rooms.remove(room)
+    }
     fun reset() {
         customer = ""
         phone = ""
+        discount = ""
+        extraCharges = ""
         rooms.clear()
         rooms.add(RoomState())
     }
-
-    fun toRoomDataList(): List<RoomData> =
-        rooms.map { it.toRoomData() }.filter { it.items.isNotEmpty() }
+    fun toRoomDataList(): List<RoomData> = rooms.map { it.toRoomData() }.filter { it.items.isNotEmpty() }
 }

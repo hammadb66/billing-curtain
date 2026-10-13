@@ -32,6 +32,11 @@ data class Bill(
     val phone: String,
     val date: String,
     val rooms: List<RoomData>,
+    val discount: Double = 0.0,       // Naya field
+    val extraCharges: Double = 0.0,  // Naya field
 ) {
-    val grandTotal: Double get() = rooms.sumOf { it.total }
+    val grandTotal: Double get() {
+        val raw = rooms.sumOf { it.total }
+        return (raw - discount + extraCharges).coerceAtLeast(0.0)
+    }
 }
