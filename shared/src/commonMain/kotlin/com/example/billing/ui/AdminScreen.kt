@@ -120,33 +120,33 @@ fun AdminScreen(
                         Text("Admin Panel", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AppGreen)
                         Text(session.email, fontSize = 12.sp, color = Color.Gray)
                     }
-                    Button(onClick = onOpenBilling) { Text("Billing kholein") }
+                    Button(onClick = onOpenBilling) { Text("Open Billing") }
                     OutlinedButton(onClick = onLogout) { Text("Logout") }
                 }
 
                 // ---- Is laptop ka shop code ----
-                Panel("Is laptop ka Shop Code") {
-                    Text(thisShop ?: "Abhi set nahi hai", fontWeight = FontWeight.SemiBold)
+                Panel("This laptop's shop code") {
+                    Text(thisShop ?: "Not set yet.", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Ek dukaan ke saare laptops par yehi ek code lagana hai. Har dukaan ke laptops ki had (Max laptops) neeche set hoti hai.",
+                        "The same code needs to be applied to all the laptops in a shop. The limit (maximum number of laptops) for each shop is set below.",
                         fontSize = 12.sp,
                         color = Color.Gray,
                     )
-                    OutlinedButton(onClick = { showChangeShop = true }) { Text("Shop Code badlein") }
+                    OutlinedButton(onClick = { showChangeShop = true }) { Text("Change Shop Code") }
                 }
 
                 // ---- Shops (Firebase) ----
-                Panel("Shops (Firebase par license ON / OFF)") {
+                Panel("Shops (Firebase license ON / OFF)") {
                     shopsError?.let { Text(it, color = Color.Red, fontSize = 13.sp) }
                     if (shops.isEmpty() && shopsError == null) {
-                        Text("Abhi koi shop nahi. Neeche se banayein.", color = Color.Gray)
+                        Text("No shop yet. Please add a shop below.", color = Color.Gray)
                     }
                     shops.entries.sortedBy { it.key }.forEach { (id, info) ->
                         val used = allDevices[id]?.values?.count { !it.blocked } ?: 0
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(id, fontWeight = FontWeight.SemiBold)
-                                val label = info.shopName.ifBlank { "-" } + if (id == thisShop) "   (ye laptop)" else ""
+                                val label = info.shopName.ifBlank { "-" } + if (id == thisShop) "   (or laptop)" else ""
                                 Text(label, fontSize = 12.sp, color = Color.Gray)
                                 Text(
                                     "Laptops: $used / ${info.maxDevices}",
@@ -175,7 +175,7 @@ fun AdminScreen(
                         }
                         Row {
                             TextButton(onClick = { devicesFor = id }) { Text("Laptops") }
-                            TextButton(onClick = { editFor = id }) { Text("Naam / Message") }
+                            TextButton(onClick = { editFor = id }) { Text("Name / Message") }
                             TextButton(onClick = { deleteShopFor = id }) { Text("Delete", color = Color.Red) }
                         }
                         HorizontalDivider()
@@ -187,14 +187,14 @@ fun AdminScreen(
                 }
 
                 // ---- Users (is laptop ke) ----
-                Panel("Users (sirf is laptop ke)") {
-                    if (users.isEmpty()) Text("Koi user nahi. Neeche se banayein.", color = Color.Gray)
+                Panel("Users (of this laptop only)") {
+                    if (users.isEmpty()) Text("No user. add it from below", color = Color.Gray)
                     users.forEach { u ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(u.username, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    if (u.isActive) "Active" else "Band",
+                                    if (u.isActive) "Active" else "close",
                                     fontSize = 12.sp,
                                     color = if (u.isActive) AppGreen else Color.Red,
                                 )
@@ -223,7 +223,7 @@ fun AdminScreen(
 
     if (showAddUser) {
         FormDialog(
-            title = "Naya User",
+            title = "New User",
             labels = listOf("Username", "Password"),
             secret = listOf(false, true),
             confirmText = "Add",
@@ -238,8 +238,8 @@ fun AdminScreen(
 
     passwordFor?.let { u ->
         FormDialog(
-            title = "${u.username} ka naya password",
-            labels = listOf("Naya password"),
+            title = "${u.username} new password",
+            labels = listOf("New password"),
             secret = listOf(true),
             confirmText = "Change",
             onSubmit = { v -> services.auth.changePassword(u.id, v[0]) },
@@ -250,7 +250,7 @@ fun AdminScreen(
     deleteFor?.let { u ->
         ConfirmDialog(
             title = "Delete User",
-            message = "'${u.username}' ko hamesha ke liye delete karna hai?",
+            message = "'${u.username}' delete permanently?",
             confirmText = "Delete",
             onConfirm = {
                 scope.launch {
@@ -265,11 +265,11 @@ fun AdminScreen(
 
     if (showAddShop) {
         FormDialog(
-            title = "Naya Shop",
+            title = "New Shop",
             labels = listOf(
-                "Shop code (khali chhorein to khud ban jayega)",
-                "Shop ka naam",
-                "Max laptops (khali = ${AppConfig.DEFAULT_MAX_DEVICES})",
+                "Shop Code (leave blank to generate automatically)",
+                "Shop Name",
+                "Max laptops (Blank = ${AppConfig.DEFAULT_MAX_DEVICES})",
             ),
             secret = listOf(false, false, false),
             confirmText = "Create",
@@ -277,9 +277,9 @@ fun AdminScreen(
                 val id = v[0].trim().ifBlank { "shop_" + randomSaltHex().take(10) }
                 val max = v[2].trim().ifBlank { AppConfig.DEFAULT_MAX_DEVICES.toString() }.toIntOrNull()
                 if (!isValidShopId(id)) {
-                    "Shop code 3 se 40 harf ka ho: sirf a-z, A-Z, 0-9, _ ya -"
+                    "Shop code must be 3 to 40 characters long: only a-z, A-Z, 0-9, _, or -"
                 } else if (max == null || max < 1) {
-                    "Max laptops kam az kam 1 ho"
+                    "Max laptops should be at least 1."
                 } else {
                     val problem = services.firebase.putLicense(
                         session.idToken, id, LicenseInfo(true, v[1].trim(), "", max),
@@ -294,8 +294,8 @@ fun AdminScreen(
 
     if (showChangeShop) {
         FormDialog(
-            title = "Is laptop ka Shop Code",
-            labels = listOf("Naya Shop Code"),
+            title = "This laptop's shop code",
+            labels = listOf("New Shop Code"),
             secret = listOf(false),
             confirmText = "Save",
             onSubmit = { v ->
@@ -311,8 +311,8 @@ fun AdminScreen(
         val info = shops[id]
         if (info != null) {
             FormDialog(
-                title = "Shop ki tafseel: $id",
-                labels = listOf("Shop ka naam", "Band hone par dikhne wala message (khali = default)"),
+                title = "Shop Details: $id",
+                labels = listOf("Shop Name", "Message displayed upon banning (blank = default)"),
                 secret = listOf(false, false),
                 initial = listOf(info.shopName, info.message),
                 confirmText = "Save",
@@ -331,8 +331,8 @@ fun AdminScreen(
     deleteShopFor?.let { id ->
         ConfirmDialog(
             title = "Shop delete",
-            message = "'$id' aur uske saare laptops ka record hamesha ke liye delete hoga. " +
-                "Is shop ke saare laptops band ho jayenge. Pakka?",
+            message = "'$id' And the records from all his laptops will be deleted forever. " +
+                "All the laptops from this shop will be close. Sure?",
             confirmText = "Delete",
             onConfirm = {
                 scope.launch {
@@ -422,11 +422,11 @@ private fun DevicesDialog(
                         scope.launch {
                             val n = maxText.toIntOrNull()
                             if (n == null || n < 1) {
-                                message = "Kam az kam 1 likhein"
+                                message = "Write at least 1."
                             } else {
                                 message = services.firebase.putLicense(
                                     session.idToken, shopId, info.copy(maxDevices = n),
-                                ) ?: "Save ho gaya"
+                                ) ?: "Saved"
                                 onChanged()
                             }
                         }
@@ -436,14 +436,14 @@ private fun DevicesDialog(
                 HorizontalDivider()
 
                 if (devices.isEmpty()) {
-                    Text("Abhi tak koi laptop register nahi hua.", color = Color.Gray)
+                    Text("No laptop has been registered yet.", color = Color.Gray)
                 }
                 devices.sortedBy { it.firstSeen }.forEach { d ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(d.label, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "ID ${d.id.take(8)}   Pehli: ${fmtTime(d.firstSeen)}   Aakhri: ${fmtTime(d.lastSeen)}",
+                                "ID ${d.id.take(8)}   first: ${fmtTime(d.firstSeen)}   last: ${fmtTime(d.lastSeen)}",
                                 fontSize = 11.sp,
                                 color = Color.Gray,
                             )
@@ -468,7 +468,7 @@ private fun DevicesDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text("Band karein") } },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close it") } },
     )
 }
 

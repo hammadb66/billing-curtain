@@ -81,7 +81,7 @@ fun CheckingScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(color = AppGreen)
             Spacer(Modifier.height(16.dp))
-            Text("License check ho raha hai...")
+            Text("Checking license...")
         }
     }
 }
@@ -112,8 +112,8 @@ fun ActivationScreen(
     }
 
     AuthCard(
-        title = "Software Activate karein",
-        subtitle = "Developer se mila hua Shop Code likhein. Is ke liye internet chahiye.",
+        title = "Activate Software",
+        subtitle = "Add your SHOPE CODE. (InterConnect Required)",
     ) {
         OutlinedTextField(
             value = code,
@@ -157,9 +157,9 @@ fun BlockedScreen(
 ) {
     var showDev by remember { mutableStateOf(false) }
 
-    AuthCard(title = "Software band hai", subtitle = "Subscription / License masla") {
+    AuthCard(title = "The software is closed.", subtitle = "Subscription / License issue") {
         Text(message, fontSize = 15.sp)
-        Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Dobara check karein") }
+        Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Try Again") }
         TextButton(onClick = { showDev = true }, modifier = Modifier.fillMaxWidth()) {
             Text("Developer login", fontSize = 12.sp, color = Color.Gray)
         }
@@ -255,7 +255,7 @@ fun LoginScreen(
         if (busy) return
         val name = username.trim()
         if (name.isEmpty() || password.isEmpty()) {
-            error = "Username aur password likhein"
+            error = "Enter the username and password."
             return
         }
         scope.launch {
@@ -271,24 +271,24 @@ fun LoginScreen(
                 } else {
                     when (val r = services.auth.login(name, password)) {
                         is LoginResult.Success -> onUserLoggedIn(r.user)
-                        LoginResult.Wrong -> error = "Username ya password ghalat hai"
-                        LoginResult.Disabled -> error = "Ye account band hai. Developer se rabta karein"
+                        LoginResult.Wrong -> error = "Incorrect username or password."
+                        LoginResult.Disabled -> error = "This account is closed. Contact the developer."
                         is LoginResult.Locked ->
-                            error = "Bohat ghalat koshishen. ${r.seconds} second baad dobara try karein"
+                            error = "Too many failed attempts. Try again after ${r.seconds} seconds."
                     }
                 }
             } catch (e: Throwable) {
-                error = "Login me masla: ${e.message ?: e}"
+                error = "Login Issue: ${e.message ?: e}"
             } finally {
                 busy = false
             }
         }
     }
 
-    AuthCard(title = "Billing System", subtitle = "Login karein") {
+    AuthCard(title = "Billing System", subtitle = "Log in") {
         if (offline) {
             Text(
-                "Internet nahi hai: offline mode me chal raha hai.",
+                "No internet connection: Running in offline mode.",
                 color = Color(0xFFE65100),
                 fontSize = 12.sp,
             )
@@ -321,7 +321,7 @@ fun LoginScreen(
             }
         }
         Text(
-            "Naya login chahiye ya password bhool gaye? Developer se rabta karein.",
+            "Need a new login or forgot your password? Contact the developer.",
             fontSize = 12.sp,
             color = Color.Gray,
         )

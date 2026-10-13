@@ -68,11 +68,9 @@ fun EditBillScreen(
 
     var customer by remember { mutableStateOf(bill.customer) }
     var phone by remember { mutableStateOf(bill.phone) }
-    // toInputString: 10000000.0 ko "1.0E7" nahi, "10000000" banata hai
     var discount by remember { mutableStateOf(bill.discount.toInputString()) }
     var extraCharges by remember { mutableStateOf(bill.extraCharges.toInputString()) }
     var discountIsPercent by remember { mutableStateOf(false) }
-    // Received: khali = poora paisa mila. "0" = kuch nahi mila (poora udhaar)
     var received by remember { mutableStateOf(bill.paidAmount?.let { if (it <= 0.0) "0" else it.toInputString() } ?: "") }
     var isDirty by remember { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
@@ -88,28 +86,35 @@ fun EditBillScreen(
         }
     }
 
-    // Live hisaab: kuch bhi badle, ye khud dobara calculate hota hai
     val subtotal = rooms.sumOf { it.total }
     val discountValue = resolveDiscount(subtotal, discount, discountIsPercent)
     val extraValue = extraCharges.toDoubleOrNull() ?: 0.0
     val grandTotal = (subtotal - discountValue + extraValue).coerceAtLeast(0.0)
-    val receivedValue = received.toDoubleOrNull()   // null = poora mila
+    val receivedValue = received.toDoubleOrNull()
 
     fun requestBack() {
         if (isDirty) showDiscard = true else onClose()
     }
 
     fun save() {
-        if (isSaving) return
+        val incompleteItem = rooms.asSequence()
+            .flatMap { room -> room.items.map { room to it } }
+            .firstOrNull { (_, item) -> item.isIncomplete }
 
         val problem = when {
             customer.isBlank() -> "Customer name is required"
-            rooms.none { r -> r.items.any { it.total > 0.0 } } -> "Kam az kam ek item ki qty aur rate daalein"
-            rooms.any { r -> r.items.any { it.isIncomplete } } -> "Laal item me sirf qty ya sirf rate hai. Dono daalein ya item delete karein."
-            discountValue > subtotal -> "Discount subtotal se zyada nahi ho sakta"
-            receivedValue != null && receivedValue > grandTotal + 0.005 -> "Received total se zyada nahi ho sakta"
+            rooms.none { r -> r.items.any { it.total > 0.0 } } -> "Enter the quantity and rate for at least one item."
+            incompleteItem != null -> {
+                val roomName = incompleteItem.first.name.ifBlank { "Room" }
+                val itemName = incompleteItem.second.name
+                val missing = if (incompleteItem.second.qty.isBlank()) "Qty" else "Rate"
+                "Room \"$roomName\" -> \"$itemName\" $missing is missing."
+            }
+            discountValue > subtotal -> "Discount is greater than subtotal."
+            receivedValue != null && receivedValue > grandTotal + 0.005 -> "Received is greater than total."
             else -> null
         }
+
         if (problem != null) {
             scope.launch { snackbar.showSnackbar(problem) }
             return
@@ -124,7 +129,7 @@ fun EditBillScreen(
                         .map { ItemData(it.name, it.qty, it.rate) },
                 )
             }
-            .filter { it.items.isNotEmpty() } // khali room save nahi hoga (Billing screen jaisa)
+            .filter { it.items.isNotEmpty() }
 
         scope.launch {
             isSaving = true
@@ -191,7 +196,6 @@ fun EditBillScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // ---------- Customer ----------
                 item {
                     SectionCard(title = "Customer Details") {
                         OutlinedTextField(
@@ -216,7 +220,6 @@ fun EditBillScreen(
                     }
                 }
 
-                // ---------- Discount / Extra ----------
                 item {
                     SectionCard(title = "Discount, Extra & Payment") {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -239,13 +242,13 @@ fun EditBillScreen(
                             )
                         }
                         if (discountValue > subtotal) {
-                            Text("Discount subtotal se zyada hai!", color = Color.Red, fontSize = 12.sp)
+                            Text("Discount is greater than subtotal.", color = Color.Red, fontSize = 12.sp)
                         }
                         OutlinedTextField(
                             value = received,
                             onValueChange = { received = sanitizeDecimal(it); isDirty = true },
-                            label = { Text("Received / Jitne paise mile (Rs)") },
-                            supportingText = { Text("Khali = poora paisa mila. 0 = kuch nahi mila.") },
+                            label = { Text("Received Amount (Rs)") },
+                            supportingText = { Text("Blank means no amount received.") },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -254,7 +257,6 @@ fun EditBillScreen(
                     }
                 }
 
-                // ---------- Rooms header ----------
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column {
@@ -281,26 +283,19 @@ fun EditBillScreen(
         }
     }
 
-    // ---------- Dialogs ----------
     addItemFor?.let { room ->
-        val used = room.items.map { it.name }.toSet()
-        val remaining = masterItems.filter { it !in used }
         AlertDialog(
             onDismissRequest = { addItemFor = null },
             title = { Text("Add Item") },
             text = {
-                if (remaining.isEmpty()) {
-                    Text("Is room me saare items pehle se add hain.")
-                } else {
-                    Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                        remaining.forEach { name ->
-                            Text(
-                                name,
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { room.items.add(EditItem(name, "", "")); isDirty = true; addItemFor = null }
-                                    .padding(vertical = 12.dp),
-                            )
-                        }
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    masterItems.forEach { name ->
+                        Text(
+                            name,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { room.items.add(EditItem(name, "", "")); isDirty = true; addItemFor = null }
+                                .padding(vertical = 12.dp),
+                        )
                     }
                 }
             },
@@ -311,7 +306,7 @@ fun EditBillScreen(
     roomToDelete?.let { room ->
         ConfirmDialog(
             "Delete Room",
-            "\"${room.name.ifBlank { "Room" }}\" aur is ke saare items delete ho jayenge. Pakka?",
+            "\"${room.name.ifBlank { "Room" }}\" This room and all its item will remove. Are you sure?",
             "Delete",
             { rooms.remove(room); isDirty = true; roomToDelete = null },
             { roomToDelete = null },
@@ -329,7 +324,6 @@ fun EditBillScreen(
     }
 }
 
-/** Safed card + chhota title + andar ka content (customer card, discount card dono yehi use karte hain). */
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
@@ -352,7 +346,6 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column {
-            // Room ka header: naam + room total + delete
             Row(
                 Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(start = 16.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -365,7 +358,7 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
                     modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (room.name.isEmpty()) Text("Room ka naam", fontSize = 16.sp, color = Color.Gray)
+                            if (room.name.isEmpty()) Text("Room name", fontSize = 16.sp, color = Color.Gray)
                             inner()
                         }
                     },
@@ -380,24 +373,22 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 if (room.items.isEmpty()) {
                     Text(
-                        "Is room me abhi koi item nahi.",
+                        "No item in this room",
                         fontSize = 13.sp,
                         color = Color.Gray,
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
                 } else {
-                    // Column ke naam (Billing screen jaisa)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Item", Modifier.weight(3f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
                         Text("Qty", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
                         Text("Rate", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
                         Text("Total", Modifier.weight(1.4f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End)
-                        Spacer(Modifier.width(36.dp)) // delete icon ki jagah
+                        Spacer(Modifier.width(36.dp))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Color(0xFFF0F0F0))
 
                     room.items.forEach { item ->
-                        // Adhura item (sirf qty ya sirf rate) halka laal dikhega
                         Row(
                             Modifier.fillMaxWidth()
                                 .background(if (item.isIncomplete) Color(0xFFFFEBEE) else Color.Transparent, RoundedCornerShape(8.dp))
@@ -415,11 +406,10 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
                     }
                 }
 
-                // Item add karne ka bara, wazeh button
                 TextButton(onClick = onAddItem) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = AppGreen, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Item Add Karein", color = AppGreen, fontWeight = FontWeight.Bold)
+                    Text("Add Item", color = AppGreen, fontWeight = FontWeight.Bold)
                 }
             }
         }

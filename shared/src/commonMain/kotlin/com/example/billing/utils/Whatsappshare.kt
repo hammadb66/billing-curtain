@@ -25,6 +25,7 @@ fun buildBillMessage(bill: Bill): String = buildString {
     appendLine("Invoice #${bill.id}")
     appendLine("Date: ${displayDate(bill.date)}")
     appendLine("Customer: ${bill.customer}")
+    appendLine("Customer Number: ${bill.phone}")
     appendLine()
 
     for (room in bill.rooms) {

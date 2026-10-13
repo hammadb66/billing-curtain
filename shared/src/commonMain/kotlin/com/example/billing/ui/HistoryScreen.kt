@@ -50,6 +50,10 @@ import com.example.billing.utils.toInputString
 import com.example.billing.utils.whatsAppUrl
 import kotlinx.coroutines.launch
 
+interface FileImporter {
+    suspend fun pickJsonFile(): String?
+}
+
 private enum class DateFilter { ALL, TODAY, MONTH, CUSTOM }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,9 +63,8 @@ fun HistoryScreen(
     printer: PdfPrinter,
     onBack: () -> Unit,
     onEdit: (Bill) -> Unit,
-    // Export/Backup ke liye (Android: AndroidFileExporter(context), Desktop: DesktopFileExporter()).
-    // null ho to menu dabane par setup ka message aata hai.
     exporter: FileExporter? = null,
+    importer: FileImporter? = null,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -77,7 +80,7 @@ fun HistoryScreen(
     var showMenu by remember { mutableStateOf(false) }
 
     var dateFilter by remember { mutableStateOf(DateFilter.ALL) }
-    var customDay by remember { mutableStateOf<String?>(null) }   // "2026-10-13"
+    var customDay by remember { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
     var onlyDue by remember { mutableStateOf(false) }
 
@@ -97,12 +100,12 @@ fun HistoryScreen(
     fun runExport(fileName: String, content: String) {
         val ex = exporter
         if (ex == null) {
-            scope.launch { snackbar.showSnackbar("Export setup nahi hua: HistoryScreen ko exporter = ... dein") }
+            scope.launch { snackbar.showSnackbar("Export setup missing: Pass exporter = ... to HistoryScreen") }
             return
         }
         scope.launch {
             val where = ex.saveText(fileName, content)
-            snackbar.showSnackbar(if (where != null) "Saved: $where" else "Export fail ho gaya")
+            snackbar.showSnackbar(if (where != null) "Saved: $where" else "Export failed")
         }
     }
 
@@ -111,10 +114,8 @@ fun HistoryScreen(
 
     PlatformBackHandler { onBack() }
 
-    // Aaj ki date "2026-10-13" (nowIso ke pehle 10 harf)
     val todayDay = nowIso().take(10)
 
-    // Search + Date filter + Baqaya filter, TEENO ek saath chalte hain
     val filtered = remember(bills, query, dateFilter, customDay, onlyDue, todayDay) {
         val month = todayDay.take(7)
         bills.orEmpty().filter { bill ->
@@ -135,13 +136,13 @@ fun HistoryScreen(
 
     val customLabel = customDay?.let { isoDayToDisplay(it) } ?: "-"
     val periodLabel = when (dateFilter) {
-        DateFilter.ALL -> "SAB"
-        DateFilter.TODAY -> "AAJ"
-        DateFilter.MONTH -> "IS MAHINE"
+        DateFilter.ALL -> "ALL"
+        DateFilter.TODAY -> "TODAY"
+        DateFilter.MONTH -> "THIS MONTH"
         DateFilter.CUSTOM -> customLabel
     }
     val periodFile = when (dateFilter) {
-        DateFilter.ALL -> "all"
+        DateFilter.ALL -> "ALL"
         DateFilter.TODAY -> todayDay
         DateFilter.MONTH -> todayDay.take(7)
         DateFilter.CUSTOM -> customDay ?: "custom"
@@ -149,13 +150,13 @@ fun HistoryScreen(
     val caption = buildString {
         append(
             when (dateFilter) {
-                DateFilter.ALL -> "Dikha rahe hain: Sab bills"
-                DateFilter.TODAY -> "Dikha rahe hain: Aaj (${isoDayToDisplay(todayDay)})"
-                DateFilter.MONTH -> "Dikha rahe hain: Is Mahine (${todayDay.drop(5).take(2)}-${todayDay.take(4)})"
-                DateFilter.CUSTOM -> "Dikha rahe hain: Select ki hui date ($customLabel)"
+                DateFilter.ALL -> "SHOWING: ALL BILLS"
+                DateFilter.TODAY -> "SHOWING: TODAY (${isoDayToDisplay(todayDay)})"
+                DateFilter.MONTH -> "SHOWING: THIS MONTH (${todayDay.drop(5).take(2)}-${todayDay.take(4)})"
+                DateFilter.CUSTOM -> "SHOWING: SELECTED DATA ($customLabel)"
             }
         )
-        if (onlyDue) append("  •  Sirf Baqaya")
+        if (onlyDue) append("  •  PENDING AMOUNT")
         if (query.isNotBlank()) append("  •  Search: \"$query\"")
     }
 
@@ -197,14 +198,14 @@ fun HistoryScreen(
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             DropdownMenuItem(
-                                text = { Text("Export CSV (jo list dikh rahi hai)") },
+                                text = { Text("Export CSV (Only visible list)") },
                                 onClick = {
                                     showMenu = false
                                     runExport("bills_$periodFile.csv", billsToCsv(filtered))
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Poora Backup (JSON)") },
+                                text = { Text("All Backup (JSON)") },
                                 onClick = {
                                     showMenu = false
                                     val all = bills
@@ -213,8 +214,32 @@ fun HistoryScreen(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Saari history delete karein", color = Color.Red) },
+                                text = { Text("Delete all History", color = Color.Red) },
                                 onClick = { showMenu = false; confirmClearAll = true },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("JSON Import (Backup Restore)") },
+                                onClick = {
+                                    showMenu = false
+                                    val imp = importer
+                                    if (imp == null) {
+                                        scope.launch { snackbar.showSnackbar("Couldn't setup File importer") }
+                                    } else {
+                                        scope.launch {
+                                            val jsonString = imp.pickJsonFile()
+                                            if (!jsonString.isNullOrBlank()) {
+                                                val success = repository.importFromJson(jsonString)
+                                                if (success) {
+                                                    reload()
+                                                    snackbar.showSnackbar("Data successfully imported.")
+                                                } else {
+                                                    snackbar.showSnackbar("Import failed. Check File format.")
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
@@ -226,7 +251,6 @@ fun HistoryScreen(
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 900.dp).fillMaxSize()) {
 
-                // Upar: summary + filters (list khali ho tab bhi nazar aate hain, taake filter wapas badal sakein)
                 if (bills != null) {
                     HistorySummary(
                         count = filtered.size,
@@ -238,9 +262,9 @@ fun HistoryScreen(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        FilterChip(selected = dateFilter == DateFilter.ALL, onClick = { dateFilter = DateFilter.ALL }, label = { Text("Sab") })
-                        FilterChip(selected = dateFilter == DateFilter.TODAY, onClick = { dateFilter = DateFilter.TODAY }, label = { Text("Aaj") })
-                        FilterChip(selected = dateFilter == DateFilter.MONTH, onClick = { dateFilter = DateFilter.MONTH }, label = { Text("Is Mahine") })
+                        FilterChip(selected = dateFilter == DateFilter.ALL, onClick = { dateFilter = DateFilter.ALL }, label = { Text("ALL") })
+                        FilterChip(selected = dateFilter == DateFilter.TODAY, onClick = { dateFilter = DateFilter.TODAY }, label = { Text("Today") })
+                        FilterChip(selected = dateFilter == DateFilter.MONTH, onClick = { dateFilter = DateFilter.MONTH }, label = { Text("This Month") })
                         FilterChip(
                             selected = dateFilter == DateFilter.CUSTOM,
                             onClick = { showDatePicker = true },
@@ -250,7 +274,7 @@ fun HistoryScreen(
                         FilterChip(
                             selected = onlyDue,
                             onClick = { onlyDue = !onlyDue },
-                            label = { Text("Sirf Baqaya") },
+                            label = { Text("Pending Payment") },
                         )
                     }
                     Text(
@@ -285,12 +309,12 @@ fun HistoryScreen(
                                     onReceive = { billToReceive = bill },
                                     onWhatsApp = {
                                         if (bill.phone.isBlank()) {
-                                            scope.launch { snackbar.showSnackbar("Is bill me customer ka number nahi hai") }
+                                            scope.launch { snackbar.showSnackbar("The customer's number is not on this bill.") }
                                         } else {
                                             try {
                                                 uriHandler.openUri(whatsAppUrl(bill.phone, buildBillMessage(bill)))
                                             } catch (e: Throwable) {
-                                                scope.launch { snackbar.showSnackbar("WhatsApp nahi khul saka") }
+                                                scope.launch { snackbar.showSnackbar("WhatsApp could not be opened.") }
                                             }
                                         }
                                     },
@@ -324,9 +348,7 @@ fun HistoryScreen(
         }
     }
 
-    // ---------- Calendar ----------
     if (showDatePicker) {
-        // Calendar kholte hi: pehle select ki hui date, warna AAJ ki date chuni hoti hai
         val pickerState = rememberDatePickerState(
             initialSelectedDateMillis = isoDayToEpochMillis(customDay ?: todayDay)
         )
@@ -347,9 +369,8 @@ fun HistoryScreen(
         }
     }
 
-    // ---------- Dialogs ----------
     billToDelete?.let { bill ->
-        ConfirmDialog("Delete Bill", "Bill #${bill.id} (${bill.customer}) delete karna hai?", "Delete", {
+        ConfirmDialog("Delete Bill", "Do you want to delete #${bill.id} (${bill.customer}) bill?", "Delete", {
             billToDelete = null
             scope.launch { repository.deleteBill(bill.id); reload() }
         }, { billToDelete = null })
@@ -365,7 +386,7 @@ fun HistoryScreen(
                     try {
                         repository.updatePaid(bill.id, newPaid)
                         reload()
-                        snackbar.showSnackbar("Rs ${formatMoney(amount)} wasool ho gaye")
+                        snackbar.showSnackbar("Rs ${formatMoney(amount)} received")
                     } catch (e: Throwable) {
                         snackbar.showSnackbar("Save failed: ${e.message ?: e}")
                     }
@@ -395,18 +416,18 @@ private fun ReceivePaymentDialog(bill: Bill, onConfirm: (Double) -> Unit, onDism
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${bill.customer}  •  Bill #${bill.id}", fontSize = 13.sp, color = Color.Gray)
-                Text("Baqaya: Rs ${formatMoney(bill.balance)}", color = DueColor, fontWeight = FontWeight.Bold)
+                Text("Pending: Rs ${formatMoney(bill.balance)}", color = DueColor, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = sanitizeDecimal(it) },
-                    label = { Text("Kitne mile (Rs)") },
+                    label = { Text("Received Amount (Rs)") },
                     singleLine = true,
                     isError = text.isNotBlank() && !valid,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(amount) }, enabled = valid) { Text("Wasool Karein") } },
+        confirmButton = { TextButton(onClick = { onConfirm(amount) }, enabled = valid) { Text("Received Confirm") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
@@ -419,7 +440,7 @@ private fun HistorySummary(count: Int, sale: Double, due: Double, periodLabel: S
     ) {
         StatCard("BILLS", count.toString(), Color(0xFF1E293B), Modifier.weight(1f))
         StatCard("SALE • $periodLabel", "Rs ${formatMoney(sale)}", AppGreen, Modifier.weight(1.4f))
-        StatCard("BAQAYA", "Rs ${formatMoney(due)}", DueColor, Modifier.weight(1.2f))
+        StatCard("Pending", "Rs ${formatMoney(due)}", DueColor, Modifier.weight(1.2f))
     }
 }
 
@@ -456,7 +477,6 @@ private fun ModernBillCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     ) {
         Column {
-            // ---------- Header (hamesha nazar aata hai) ----------
             Row(
                 Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -477,7 +497,7 @@ private fun ModernBillCard(
 
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (bill.balance > 0.005) {
-                            AmountTag("BAQAYA Rs ${formatMoney(bill.balance)}", DueColor)
+                            AmountTag("Pending Rs ${formatMoney(bill.balance)}", DueColor)
                         } else {
                             AmountTag("PAID", PaidColor)
                         }
@@ -496,14 +516,12 @@ private fun ModernBillCard(
                 }
             }
 
-            // ---------- Detail (tap karne par khulta hai) ----------
             if (expanded) {
                 HorizontalDivider(color = Color(0xFFF1F5F9))
                 Spacer(Modifier.size(6.dp))
 
                 bill.rooms.forEach { room -> RoomTableCard(room) }
 
-                // Subtotal, Discount, Extra, Grand Total, Received, Baqaya
                 Column(
                     Modifier.fillMaxWidth().padding(top = 8.dp).background(Color(0xFFF8FAFC)).padding(16.dp),
                 ) {
@@ -516,7 +534,6 @@ private fun ModernBillCard(
                     )
                 }
 
-                // Baqaya wasool karne ka bara button
                 if (bill.balance > 0.005) {
                     Button(
                         onClick = onReceive,
@@ -524,11 +541,10 @@ private fun ModernBillCard(
                         colors = ButtonDefaults.buttonColors(containerColor = DueColor),
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
                     ) {
-                        Text("Payment Receive  (Baqaya Rs ${formatMoney(bill.balance)})", fontWeight = FontWeight.Bold)
+                        Text("Payment Receive  (Pending Rs ${formatMoney(bill.balance)})", fontWeight = FontWeight.Bold)
                     }
                 }
 
-                // Action buttons
                 Row(
                     Modifier.fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

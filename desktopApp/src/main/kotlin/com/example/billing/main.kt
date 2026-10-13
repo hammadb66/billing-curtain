@@ -13,9 +13,11 @@ import java.util.logging.Logger
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.res.useResource
+import com.example.billing.utils.DesktopFileExporter
+import com.example.billing.utils.DesktopFileImporter
 
-private val pdfBoxLoggers = listOf("org.apache.pdfbox", "org.apache.fontbox")
-    .map { Logger.getLogger(it).apply { level = Level.OFF } }
+private val pdfBoxLoggers =
+    listOf("org.apache.pdfbox", "org.apache.fontbox").map { Logger.getLogger(it).apply { level = Level.OFF } }
 
 fun main() = application {
     val services = remember { createAppServices(DriverFactory(), readDeviceIdentity()) }
@@ -25,11 +27,14 @@ fun main() = application {
     val icon = remember {
         useResource("icon.png") { BitmapPainter(loadImageBitmap(it)) }
     }
+    val exporter = remember { DesktopFileExporter() }
+    val fileImporter = remember { DesktopFileImporter() }
     Window(
         onCloseRequest = ::exitApplication,
         title = "Billing System",
         icon = icon,
         state = rememberWindowState(width = 1200.dp, height = 800.dp),
     ) {
-        App(services, printer, presetShop)    }
+        App(services, printer, presetShop, exporter = exporter, exporter_importer = fileImporter)
+    }
 }

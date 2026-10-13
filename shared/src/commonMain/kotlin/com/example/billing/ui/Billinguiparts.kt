@@ -54,7 +54,7 @@ fun AmountBreakdown(
             AmountLine("GRAND TOTAL", "Rs ${formatMoney(grandTotal)}", Color(0xFF0F172A), big = true)
             if (hasBalance && received != null) {
                 AmountLine("Received", "Rs ${formatMoney(received)}", PaidColor)
-                AmountLine("BAQAYA", "Rs ${formatMoney(balance)}", DueColor, big = true)
+                AmountLine("Pending", "Rs ${formatMoney(balance)}", DueColor, big = true)
             }
         }
     }
@@ -92,7 +92,7 @@ fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifi
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Received: Rs ${formatMoney(received)}", fontSize = 12.sp, color = Color(0xFF475569))
-            Text("Baqaya: Rs ${formatMoney(balance)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DueColor)
+            Text("Pending: Rs ${formatMoney(balance)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DueColor)
         }
     }
 }

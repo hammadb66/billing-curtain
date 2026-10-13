@@ -27,9 +27,11 @@ import com.example.billing.ui.BillingScreen
 import com.example.billing.ui.BlockedScreen
 import com.example.billing.ui.CheckingScreen
 import com.example.billing.ui.EditBillScreen
+import com.example.billing.ui.FileImporter
 import com.example.billing.ui.HistoryScreen
 import com.example.billing.ui.LoginScreen
 import com.example.billing.utils.Branding
+import com.example.billing.utils.FileExporter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -56,7 +58,14 @@ private sealed interface Gate {
  * presetShopCode: agar laptop par "shop.code" file rakhi ho to uska code (customer ko type nahi karna padta).
  */
 @Composable
-fun App(services: AppServices, printer: PdfPrinter, presetShopCode: String? = null) {
+fun App(
+    services: AppServices,
+    printer: PdfPrinter,
+    presetShopCode: String? = null,
+    exporter: FileExporter? = null,
+    exporter_importer: FileImporter? = null
+) {
+    val importer = exporter_importer
     AppTheme {
         val scope = rememberCoroutineScope()
         val form = remember { BillingFormState() }
@@ -160,6 +169,8 @@ fun App(services: AppServices, printer: PdfPrinter, presetShopCode: String? = nu
                             printer = printer,
                             onBack = { screen = Screen.Billing },
                             onEdit = { screen = Screen.Edit(it) },
+                            exporter = exporter,
+                            importer = importer,
                         )
                         is Screen.Edit -> EditBillScreen(
                             bill = current.bill,

@@ -120,4 +120,33 @@ class BillRepository(database: BillingDatabase) {
     suspend fun deleteAll() {
         withContext(Dispatchers.Default) { queries.deleteAll() }
     }
+
+
+    /** JSON string se backup bills import karta hai. */
+    suspend fun importFromJson(jsonString: String): Boolean = withContext(Dispatchers.Default) {
+        try {
+            val backupList = json.decodeFromString(
+                ListSerializer(com.example.billing.utils.BillBackup.serializer()),
+                jsonString
+            )
+            queries.transaction {
+                for (b in backupList) {
+                    queries.insertBill(
+                        b.customer,
+                        b.phone,
+                        json.encodeToString(roomsSerializer, b.rooms),
+                        b.date,
+                        b.discount,
+                        b.extraCharges,
+                        b.paidAmount
+                    )
+                }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
 }

@@ -31,8 +31,17 @@ class RoomState {
     val id: Long = nextId()
     var name by mutableStateOf("")
     var expanded by mutableStateOf(true)
-    val items: List<ItemState> = masterItems.map { ItemState(it) }
+    // Master items se predefined list banane ke bajaye mutable state list rakhein
+    val items = mutableStateListOf<ItemState>()
     val total: Double get() = items.sumOf { it.total }
+
+    fun addItem(name: String) {
+        items.add(ItemState(name))
+    }
+
+    fun removeItem(item: ItemState) {
+        items.remove(item)
+    }
 
     fun toRoomData() = RoomData(
         roomName = name.trim(),
@@ -57,9 +66,9 @@ class BillingFormState {
     val grandTotal: Double get() = (subtotal - discountValue + extraValue).coerceAtLeast(0.0)
 
     /** null = poora paisa mila. */
-    val receivedValue: Double? get() = received.toDoubleOrNull()
-    val balance: Double get() = receivedValue?.let { (grandTotal - it).coerceAtLeast(0.0) } ?: 0.0
-
+    /** Blank = 0 mila. Koi amount likhi ho to wohi. */
+    val receivedValue: Double get() = received.toDoubleOrNull() ?: 0.0
+    val balance: Double get() = (grandTotal - receivedValue).coerceAtLeast(0.0)
     val hasAnyItem: Boolean get() = rooms.any { r -> r.items.any { it.total > 0.0 } }
     val hasIncompleteItem: Boolean get() = rooms.any { r -> r.items.any { it.isIncomplete } }
 

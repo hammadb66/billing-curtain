@@ -78,7 +78,7 @@ class FirebaseApi {
     suspend fun fetchDevices(shopId: String): DevicesResult = try {
         val res = httpCall("GET", "$db/devices/$shopId.json")
         if (res.code != 200) {
-            DevicesResult.Failed("devices HTTP ${res.code} (Firebase Rules me 'devices' ka hissa Publish kiya?)")
+            DevicesResult.Failed("devices HTTP ${res.code} (Did you publish the devices section in the Firebase Rules?)")
         } else {
             DevicesResult.Ok(parseDevices(json.parseToJsonElement(res.body)))
         }
@@ -138,8 +138,8 @@ class FirebaseApi {
             val obj = json.parseToJsonElement(res.body).jsonObject
             val token = obj["idToken"]?.jsonPrimitive?.contentOrNull ?: ""
             val mail = obj["email"]?.jsonPrimitive?.contentOrNull ?: ""
-            if (token.isEmpty()) DevResult.Failed("Login nahi hua")
-            else if (!mail.equals(AppConfig.DEV_EMAIL, ignoreCase = true)) DevResult.Failed("Ye developer account nahi hai")
+            if (token.isEmpty()) DevResult.Failed("Login failed.")
+            else if (!mail.equals(AppConfig.DEV_EMAIL, ignoreCase = true)) DevResult.Failed("This is not a developer account.")
             else DevResult.Success(DevSession(mail, token))
         } else {
             val code = runCatching {
@@ -147,17 +147,17 @@ class FirebaseApi {
             }.getOrNull() ?: ""
             DevResult.Failed(
                 when {
-                    code.contains("TOO_MANY") -> "Bohat zyada koshishen. Thori der baad try karein"
+                    code.contains("TOO_MANY") -> "Extensive efforts. Try again after a while."
                     code.contains("INVALID") || code.contains("EMAIL_NOT_FOUND") || code.contains("PASSWORD") ->
-                        "Email ya password ghalat hai"
-                    else -> "Login nahi hua (HTTP ${res.code} $code)"
+                        "The email or password is incorrect."
+                    else -> "Login failed (HTTP ${res.code} $code)"
                 }
             )
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        DevResult.Failed("Internet check karein (developer login ke liye internet zaroori hai)")
+        DevResult.Failed("Check your internet connection (internet is required for developer login).")
     }
 
     // =============== Sirf developer (token ke saath) ===============
@@ -165,7 +165,7 @@ class FirebaseApi {
     suspend fun listLicenses(idToken: String): ShopsResult = try {
         val res = httpCall("GET", "$db/licenses.json?auth=$idToken")
         if (res.code != 200) {
-            ShopsResult.Failed("Shops nahi mile (HTTP ${res.code}). Firebase Rules aur developer login check karein")
+            ShopsResult.Failed("Couldn't find the shops (HTTP ${res.code}). Check Firebase rules and developer login.")
         } else {
             val element = json.parseToJsonElement(res.body)
             if (element is JsonObject) {
@@ -180,7 +180,7 @@ class FirebaseApi {
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        ShopsResult.Failed("Internet check karein")
+        ShopsResult.Failed("Check the internet.")
     }
 
     /** shopId -> (deviceId -> record). null = masla */
@@ -211,40 +211,40 @@ class FirebaseApi {
             put("maxDevices", info.maxDevices)
         }.toString()
         val res = httpCall("PUT", "$db/licenses/$shopId.json?auth=$idToken", body)
-        if (res.code == 200) null else "Save nahi hua (HTTP ${res.code}). Developer login dobara karein"
+        if (res.code == 200) null else "Could not saved (HTTP ${res.code}). Log in as developer again"
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        "Internet check karein"
+        "Check the internet."
     }
 
     /** Shop aur uske saare laptops ka record mita deta hai. null = kamyab */
     suspend fun deleteShop(idToken: String, shopId: String): String? = try {
         val a = httpCall("DELETE", "$db/licenses/$shopId.json?auth=$idToken")
         val b = httpCall("DELETE", "$db/devices/$shopId.json?auth=$idToken")
-        if (a.code == 200 && b.code == 200) null else "Delete nahi hua (HTTP ${a.code} / ${b.code})"
+        if (a.code == 200 && b.code == 200) null else "Could not delete (HTTP ${a.code} / ${b.code})"
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        "Internet check karein"
+        "Check the internet."
     }
 
     suspend fun setDeviceBlocked(idToken: String, shopId: String, deviceId: String, blocked: Boolean): String? = try {
         val res = httpCall("PUT", "$db/devices/$shopId/$deviceId/blocked.json?auth=$idToken", blocked.toString())
-        if (res.code == 200) null else "Save nahi hua (HTTP ${res.code})"
+        if (res.code == 200) null else "Could not Save (HTTP ${res.code})"
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        "Internet check karein"
+        "Check the internet."
     }
 
     suspend fun removeDevice(idToken: String, shopId: String, deviceId: String): String? = try {
         val res = httpCall("DELETE", "$db/devices/$shopId/$deviceId.json?auth=$idToken")
-        if (res.code == 200) null else "Delete nahi hua (HTTP ${res.code})"
+        if (res.code == 200) null else "Could not delete (HTTP ${res.code})"
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        "Internet check karein"
+        "heck the internet."
     }
 
     // =============== parsing ===============
