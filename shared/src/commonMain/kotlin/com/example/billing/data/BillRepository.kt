@@ -1,12 +1,15 @@
 package com.example.billing.data
 
+import com.example.billing.BillingDatabase
 import com.example.billing.model.Bill
 import com.example.billing.model.RoomData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import com.example.billing.BillingDatabase
+
+/** Phone number se mila purana customer: naam + us ka purana baqaya. */
+class CustomerInfo(val name: String, val previousBalance: Double)
 
 class BillRepository(database: BillingDatabase) {
 
@@ -14,38 +17,72 @@ class BillRepository(database: BillingDatabase) {
     private val json = Json { ignoreUnknownKeys = true }
     private val roomsSerializer = ListSerializer(RoomData.serializer())
 
+    /** Database ki ek row ko Bill me badalta hai (selectAll aur selectByPhone dono yehi use karte hain). */
+    private fun toBill(
+        id: Long,
+        customer: String,
+        phone: String,
+        data: String,
+        date: String,
+        discount: Double,
+        extraCharges: Double,
+        paidAmount: Double?,
+    ): Bill = Bill(
+        id = id,
+        customer = customer,
+        phone = phone,
+        date = date,
+        rooms = runCatching { json.decodeFromString(roomsSerializer, data) }.getOrDefault(emptyList()),
+        discount = discount,
+        extraCharges = extraCharges,
+        paidAmount = paidAmount,
+    )
+
     suspend fun getAllBills(): List<Bill> = withContext(Dispatchers.Default) {
-        queries.selectAll().executeAsList().map { row ->
-            Bill(
-                id = row.id,
-                customer = row.customer,
-                phone = row.phone,
-                date = row.date,
-                rooms = runCatching { json.decodeFromString(roomsSerializer, row.data_) }
-                    .getOrDefault(emptyList()),
-                discount = row.discount,       // <-- Yeh yahan add hoga[cite: 32, 34]
-                extraCharges = row.extraCharges // <-- Yeh yahan add hoga[cite: 32, 34]
-            )
-        }
+        queries.selectAll(this@BillRepository::toBill).executeAsList()
     }
 
+    /** Naam + purana baqaya. Is phone ka koi bill nahi to null. */
+    suspend fun getCustomerInfo(phone: String): CustomerInfo? = withContext(Dispatchers.Default) {
+        val list = queries.selectByPhone(phone, this@BillRepository::toBill).executeAsList()
+        if (list.isEmpty()) null else CustomerInfo(list.first().customer, list.sumOf { it.balance })
+    }
+
+    /** Har item ka sab se naya rate: { "Fan" -> "1500" }. getAllBills newest-first deta hai, isliye pehla mila hua rate hi naya hai. */
+    suspend fun getLastRates(): Map<String, String> {
+        val rates = LinkedHashMap<String, String>()
+        for (bill in getAllBills()) {
+            for (room in bill.rooms) {
+                for (item in room.items) {
+                    if (item.rateValue > 0.0 && item.name !in rates) rates[item.name] = item.rate
+                }
+            }
+        }
+        return rates
+    }
+
+    /** Naye bill ka number (id) wapas deta hai, taake PDF me "Invoice #45" likh sakein. */
     suspend fun insertBill(
         customer: String,
         phone: String,
         rooms: List<RoomData>,
         dateIso: String,
-        discount: Double,       // <-- Naya parameter
-        extraCharges: Double,   // <-- Naya parameter
-    ) {
-        withContext(Dispatchers.Default) {
+        discount: Double,
+        extraCharges: Double,
+        paidAmount: Double?,
+    ): Long = withContext(Dispatchers.Default) {
+        // transaction: insert aur id uthana "ek saath" hon, beech me koi aur bill na ghus jaye
+        queries.transactionWithResult {
             queries.insertBill(
                 customer,
                 phone,
                 json.encodeToString(roomsSerializer, rooms),
                 dateIso,
                 discount,
-                extraCharges
+                extraCharges,
+                paidAmount,
             )
+            queries.lastInsertedId().executeAsOne()
         }
     }
 
@@ -54,8 +91,9 @@ class BillRepository(database: BillingDatabase) {
         customer: String,
         phone: String,
         rooms: List<RoomData>,
-        discount: Double,       // <-- Naya parameter[cite: 29]
-        extraCharges: Double,   // <-- Naya parameter[cite: 29]
+        discount: Double,
+        extraCharges: Double,
+        paidAmount: Double?,
     ) {
         withContext(Dispatchers.Default) {
             queries.updateBill(
@@ -64,9 +102,15 @@ class BillRepository(database: BillingDatabase) {
                 json.encodeToString(roomsSerializer, rooms),
                 discount,
                 extraCharges,
-                id
+                paidAmount,
+                id,
             )
         }
+    }
+
+    /** Baqaya wasool hone par "kitna mila" update karta hai. */
+    suspend fun updatePaid(id: Long, paidAmount: Double?) {
+        withContext(Dispatchers.Default) { queries.updatePaid(paidAmount, id) }
     }
 
     suspend fun deleteBill(id: Long) {

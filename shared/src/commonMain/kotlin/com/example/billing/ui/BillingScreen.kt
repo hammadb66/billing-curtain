@@ -37,6 +37,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.billing.data.BillRepository
 import com.example.billing.model.BillingFormState
 import com.example.billing.model.ItemState
+import com.example.billing.model.RateMemory
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
@@ -44,6 +45,7 @@ import com.example.billing.utils.Branding
 import com.example.billing.utils.displayDate
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.nowIso
+import com.example.billing.utils.sanitizeDecimal
 import kotlinx.coroutines.launch
 
 @Composable
@@ -62,8 +64,25 @@ fun BillingScreen(
     var roomToDelete by remember { mutableStateOf<RoomState?>(null) }
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
+    var previousBalance by remember { mutableStateOf(0.0) }
 
-    val filledItems = remember(form.rooms) { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } }
+    // Screen khulte hi "item ka pichla rate" ki diary bhar lo
+    LaunchedEffect(Unit) { runCatching { RateMemory.rates = repository.getLastRates() } }
+
+    // Phone likhte hi purana customer dhoondo: naam khud bhar do + purana baqaya dikhao
+    LaunchedEffect(form.phone) {
+        if (form.phone.length >= 7) {
+            val info = runCatching { repository.getCustomerInfo(form.phone) }.getOrNull()
+            previousBalance = info?.previousBalance ?: 0.0
+            if (info != null && form.customer.isBlank()) form.customer = info.name
+        } else {
+            previousBalance = 0.0
+        }
+    }
+
+    // derivedStateOf: qty/rate badalte hi ye khud dobara hisaab lagata hai.
+    // (Purane remember(form.rooms) me ye kabhi update nahi hota tha.)
+    val filledItems by remember { derivedStateOf { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } } }
     val summary = "${form.rooms.size} Room(s) | $filledItems Item(s)"
 
     fun printAndSave() {
@@ -81,16 +100,18 @@ fun BillingScreen(
                 val iso = nowIso()
 
                 // Discount aur Extra Charges ki values yahan nikal kar repository ko dein
-                val discVal = form.discount.toDoubleOrNull() ?: 0.0
-                val extraVal = form.extraCharges.toDoubleOrNull() ?: 0.0
+                val discVal = form.discountValue
+                val extraVal = form.extraValue
+                val paid = form.receivedValue   // null = poora paisa mila
 
-                repository.insertBill(customer, phone, rooms, iso, discVal, extraVal)
+                val newId = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid)
                 form.reset()
+                runCatching { RateMemory.rates = repository.getLastRates() }
 
                 try {
                     val printed = printer.print(
                         title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
-                        rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal),
+                        rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = newId, paidAmount = paid),
                     )
                     snackText = if (printed) "Bill printed and saved successfully" else "Bill saved. Print cancelled."
                 } catch (e: Throwable) {
@@ -127,12 +148,15 @@ fun BillingScreen(
                         Text("Billing System", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = AppGreen)
                         Text("by ${Branding.COMPANY}", fontSize = 11.sp, color = Color.Gray)
 
-                        HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting)
+                        HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting, previousBalance = previousBalance)
                         HorizontalDivider(color = Color(0xFFEEEEEE))
 
                         FinancialAdjustmentsBlock(form, enabled = !isPrinting)
 
                         HorizontalDivider(color = Color(0xFFEEEEEE))
+                        AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
+                        val receivedNow = form.receivedValue
+                        if (receivedNow != null && form.balance > 0.005) BalanceBanner(receivedNow, form.balance)
                         ActionBlock(
                             total = form.grandTotal,
                             summary = summary,
@@ -158,12 +182,15 @@ fun BillingScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item { Text("Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen) }
-                        item { HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting) }
+                        item { HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting, previousBalance = previousBalance) }
                         item { FinancialAdjustmentsBlock(form, enabled = !isPrinting) }
                         roomItems(form) { roomToDelete = it }
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
                         Column(Modifier.padding(12.dp)) {
+                            AmountBreakdown(form.subtotal, form.discountValue, form.extraValue, Modifier.padding(bottom = 6.dp))
+                            val receivedNow = form.receivedValue
+                            if (receivedNow != null && form.balance > 0.005) BalanceBanner(receivedNow, form.balance, Modifier.padding(bottom = 6.dp))
                             ActionBlock(
                                 total = form.grandTotal,
                                 summary = summary,
@@ -203,29 +230,39 @@ fun BillingScreen(
 @Composable
 private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Discounts & Extra Charges", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+        Text("Discount, Extra & Payment", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
+            DiscountInput(
                 value = form.discount,
-                onValueChange = { form.discount = it.filter { c -> c.isDigit() || c == '.' } },
-                label = { Text("Discount (Rs)") },
-                singleLine = true,
+                onValueChange = { form.discount = it },
+                isPercent = form.discountIsPercent,
+                onModeChange = { form.discountIsPercent = it; form.discount = "" },
+                computedAmount = form.discountValue,
                 enabled = enabled,
-                shape = RoundedCornerShape(10.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
             OutlinedTextField(
                 value = form.extraCharges,
-                onValueChange = { form.extraCharges = it.filter { c -> c.isDigit() || c == '.' } },
+                onValueChange = { form.extraCharges = sanitizeDecimal(it) },
                 label = { Text("Extra/Misc (Rs)") },
                 singleLine = true,
                 enabled = enabled,
                 shape = RoundedCornerShape(10.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.weight(1f)
             )
         }
+        OutlinedTextField(
+            value = form.received,
+            onValueChange = { form.received = sanitizeDecimal(it) },
+            label = { Text("Received / Jitne paise mile (Rs)") },
+            supportingText = { Text("Khali chhorein = poora paisa mila. Kam likhein to baqaya ban jayega.") },
+            singleLine = true,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -243,6 +280,7 @@ private fun HeaderBlock(
     userName: String,
     isDeveloper: Boolean,
     enabled: Boolean = true,
+    previousBalance: Double = 0.0,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
@@ -266,6 +304,14 @@ private fun HeaderBlock(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (previousBalance > 0.0) {
+            Text(
+                "Is customer ka purana baqaya: Rs ${formatMoney(previousBalance)}",
+                color = Color(0xFFE65100),
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+            )
+        }
         Button(onClick = { form.addRoom() }, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(8.dp))
@@ -391,7 +437,17 @@ private fun ItemRow(item: ItemState) {
     ) {
         Text(item.name, Modifier.weight(3f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Spacer(Modifier.width(4.dp))
-        CompactNumberField(item.qty, { item.qty = it }, Modifier.weight(1.2f))
+        CompactNumberField(
+            item.qty,
+            { newQty ->
+                item.qty = newQty
+                // Rate khali ho to is item ka pichla rate khud bhar do (badal bhi sakte hain)
+                if (item.rate.isBlank() && newQty.isNotBlank()) {
+                    RateMemory.rates[item.name]?.let { item.rate = it }
+                }
+            },
+            Modifier.weight(1.2f),
+        )
         Spacer(Modifier.width(4.dp))
         CompactNumberField(item.rate, { item.rate = it }, Modifier.weight(1.2f))
         Spacer(Modifier.width(4.dp))
@@ -402,5 +458,10 @@ private fun ItemRow(item: ItemState) {
 private fun validateForm(form: BillingFormState): Pair<String, String>? {
     if (form.customer.isBlank()) return "Missing Data" to "Customer name is required"
     if (form.phone.isBlank()) return "Missing Data" to "Customer Number is required"
+    if (!form.hasAnyItem) return "Missing Data" to "Kam az kam ek item ki qty aur rate daalein"
+    if (form.hasIncompleteItem) return "Incomplete Item" to "Kisi item me sirf qty ya sirf rate hai. Dono daalein ya dono khali chhorein."
+    if (form.discountValue > form.subtotal) return "Discount Error" to "Discount bill ke subtotal se zyada nahi ho sakta"
+    val receivedNow = form.receivedValue
+    if (receivedNow != null && receivedNow > form.grandTotal + 0.005) return "Received Error" to "Received amount bill ke total se zyada nahi ho sakta"
     return null
 }

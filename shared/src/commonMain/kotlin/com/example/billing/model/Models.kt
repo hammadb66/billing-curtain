@@ -13,7 +13,7 @@ data class ItemData(
     val total: Double get() = qtyValue * rateValue
 }
 
-/** Ek room (Bedroom, Lounge...) aur us ke items. (Flutter ka Room class) */
+/** Ek room (Bedroom, Lounge...) aur us ke items. */
 @Serializable
 data class RoomData(
     val roomName: String = "",
@@ -21,7 +21,7 @@ data class RoomData(
 ) {
     val total: Double get() = items.sumOf { it.total }
 
-    val validItems: List<ItemData>          // <-- NAYA
+    val validItems: List<ItemData>
         get() = items.filter { it.qtyValue > 0 && it.rateValue > 0 }
 }
 
@@ -32,11 +32,21 @@ data class Bill(
     val phone: String,
     val date: String,
     val rooms: List<RoomData>,
-    val discount: Double = 0.0,       // Naya field
-    val extraCharges: Double = 0.0,  // Naya field
+    val discount: Double = 0.0,
+    val extraCharges: Double = 0.0,
+    /** Kitna paisa mila. null = poora mil chuka. */
+    val paidAmount: Double? = null,
 ) {
-    val grandTotal: Double get() {
-        val raw = rooms.sumOf { it.total }
-        return (raw - discount + extraCharges).coerceAtLeast(0.0)
-    }
+    /** Discount / extra se PEHLE ka total. */
+    val subtotal: Double get() = rooms.sumOf { it.total }
+
+    val grandTotal: Double get() = (subtotal - discount + extraCharges).coerceAtLeast(0.0)
+
+    /** Asal me kitna mila (kabhi grandTotal se zyada nahi). */
+    val received: Double get() = (paidAmount ?: grandTotal).coerceIn(0.0, grandTotal)
+
+    /** Baqaya (udhaar). 0 matlab bill paid hai. */
+    val balance: Double get() = (grandTotal - received).coerceAtLeast(0.0)
+
+    val isPaid: Boolean get() = balance < 0.005
 }
