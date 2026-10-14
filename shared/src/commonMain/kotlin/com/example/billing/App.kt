@@ -42,7 +42,7 @@ sealed interface Screen {
     data class Edit(val bill: Bill) : Screen
 }
 
-/** Software ke "darwaze": pehle license, phir login, phir asli app. */
+
 private sealed interface Gate {
     data object Checking : Gate
     data object NeedActivation : Gate
