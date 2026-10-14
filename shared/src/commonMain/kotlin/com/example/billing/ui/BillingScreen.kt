@@ -38,7 +38,6 @@ import com.example.billing.data.BillRepository
 import com.example.billing.data.masterItems
 import com.example.billing.model.BillingFormState
 import com.example.billing.model.ItemState
-import com.example.billing.model.RateMemory
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
@@ -47,6 +46,8 @@ import com.example.billing.utils.displayDate
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.nowIso
 import com.example.billing.utils.sanitizeDecimal
+import com.example.billing.utils.sanitizePhone
+import com.example.billing.utils.toInputString
 import kotlinx.coroutines.launch
 
 @Composable
@@ -67,8 +68,6 @@ fun BillingScreen(
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var previousBalance by remember { mutableStateOf(0.0) }
-
-    LaunchedEffect(Unit) { runCatching { RateMemory.rates = repository.getLastRates() } }
 
     LaunchedEffect(form.phone) {
         if (form.phone.length >= 7) {
@@ -103,7 +102,6 @@ fun BillingScreen(
 
                 val newId = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid)
                 form.reset()
-                runCatching { RateMemory.rates = repository.getLastRates() }
 
                 try {
                     val printed = printer.print(
@@ -151,8 +149,7 @@ fun BillingScreen(
 
                         HorizontalDivider(color = Color(0xFFEEEEEE))
                         AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
-                        val receivedNow = form.receivedValue
-                        if (receivedNow != null && form.balance > 0.005) BalanceBanner(receivedNow, form.balance)
+                        if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance)
                         ActionBlock(
                             total = form.grandTotal,
                             summary = summary,
@@ -186,8 +183,7 @@ fun BillingScreen(
                     Surface(shadowElevation = 8.dp, color = Color.White) {
                         Column(Modifier.padding(12.dp)) {
                             AmountBreakdown(form.subtotal, form.discountValue, form.extraValue, Modifier.padding(bottom = 6.dp))
-                            val receivedNow = form.receivedValue
-                            if (receivedNow != null && form.balance > 0.005) BalanceBanner(receivedNow, form.balance, Modifier.padding(bottom = 6.dp))
+                            if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance, Modifier.padding(bottom = 6.dp))
                             ActionBlock(
                                 total = form.grandTotal,
                                 summary = summary,
@@ -216,26 +212,9 @@ fun BillingScreen(
     }
 
     addItemForRoom?.let { room ->
-        AlertDialog(
-            onDismissRequest = { addItemForRoom = null },
-            title = { Text("Add Item") },
-            text = {
-                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                    masterItems.forEach { name ->
-                        Text(
-                            name,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    room.addItem(name)
-                                    addItemForRoom = null
-                                }
-                                .padding(vertical = 12.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { addItemForRoom = null }) { Text("Cancel") } },
+        AddItemDialog(
+            onPick = { name -> room.addItem(name); addItemForRoom = null },
+            onDismiss = { addItemForRoom = null },
         )
     }
 
@@ -277,7 +256,14 @@ private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) 
             value = form.received,
             onValueChange = { form.received = sanitizeDecimal(it) },
             label = { Text("Received Amount (Rs)") },
-            supportingText = { Text("Blank means no amount received.") },
+            supportingText = { Text("Blank = nothing received. Tap Full if fully paid.") },
+            trailingIcon = {
+                TextButton(
+                    onClick = { form.received = form.grandTotal.toInputString() },
+                    enabled = enabled && form.grandTotal > 0.0,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) { Text("Full", fontWeight = FontWeight.Bold) }
+            },
             singleLine = true,
             enabled = enabled,
             shape = RoundedCornerShape(10.dp),
@@ -320,8 +306,9 @@ private fun HeaderBlock(
         )
         OutlinedTextField(
             value = form.phone,
-            onValueChange = { form.phone = it.filter { c -> c.isDigit() } },
+            onValueChange = { form.phone = sanitizePhone(it) },
             label = { Text("Customer Number") },
+            supportingText = { Text("For another country use +code, e.g. +923012345678") },
             shape = RoundedCornerShape(10.dp),
             leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
             singleLine = true,
@@ -452,15 +439,25 @@ private fun RoomCard(
                             modifier = Modifier.padding(vertical = 8.dp),
                         )
                     } else {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Item Name", Modifier.weight(3f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                            Text("Qty", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                            Text("Rate", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                            Text("Total", Modifier.weight(1.4f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End)
-                            Spacer(Modifier.width(36.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            room.items.forEachIndexed { index, item ->
+                                key(item) {
+                                    val occurrence = room.items.take(index + 1).count { it.name == item.name }
+                                    ItemEntryCard(
+                                        name = item.name,
+                                        occurrence = occurrence,
+                                        qty = item.qty,
+                                        onQtyChange = { item.qty = it },
+                                        rate = item.rate,
+                                        onRateChange = { item.rate = it },
+                                        total = item.total,
+                                        isIncomplete = item.isIncomplete,
+                                        onDuplicate = { room.duplicateItem(item) },
+                                        onDelete = { room.removeItem(item) },
+                                    )
+                                }
+                            }
                         }
-                        HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Color(0xFFF0F0F0))
-                        room.items.forEach { item -> ItemRow(item, onDeleteItem = { room.removeItem(item) }) }
                     }
 
                     TextButton(onClick = onAddItem) {
@@ -470,29 +467,6 @@ private fun RoomCard(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ItemRow(item: ItemState, onDeleteItem: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(item.name, Modifier.weight(3f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.width(4.dp))
-        CompactNumberField(
-            item.qty,
-            { newQty -> item.qty = newQty },
-            Modifier.weight(1.2f),
-        )
-        Spacer(Modifier.width(4.dp))
-        CompactNumberField(item.rate, { item.rate = it }, Modifier.weight(1.2f))
-        Spacer(Modifier.width(4.dp))
-        Text(formatMoney(item.total), Modifier.weight(1.4f), fontSize = 13.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-        IconButton(onClick = onDeleteItem, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Delete, contentDescription = "Remove item", tint = Color.Red, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -513,7 +487,6 @@ private fun validateForm(form: BillingFormState): Pair<String, String>? {
     }
 
     if (form.discountValue > form.subtotal) return "Discount Error" to "Discount is greater then subtotal"
-    val receivedNow = form.receivedValue
-    if (receivedNow != null && receivedNow > form.grandTotal + 0.005) return "Received Error" to "Received amount is greater then total"
+    if (form.receivedValue > form.grandTotal + 0.005) return "Received Error" to "Received amount is greater than total"
     return null
 }

@@ -321,7 +321,7 @@ fun LoginScreen(
             }
         }
         Text(
-            "Need a new login or forgot your password? Contact the developer.",
+            text = "Need a new login or forgot your password?\n Contact the developer.",
             fontSize = 12.sp,
             color = Color.Gray,
         )

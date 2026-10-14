@@ -47,7 +47,8 @@ import com.example.billing.utils.isoDayToEpochMillis
 import com.example.billing.utils.nowIso
 import com.example.billing.utils.sanitizeDecimal
 import com.example.billing.utils.toInputString
-import com.example.billing.utils.whatsAppUrl
+import com.example.billing.utils.toStoredPhone
+import com.example.billing.utils.whatsAppUrlFor
 import kotlinx.coroutines.launch
 
 interface FileImporter {
@@ -65,6 +66,9 @@ fun HistoryScreen(
     onEdit: (Bill) -> Unit,
     exporter: FileExporter? = null,
     importer: FileImporter? = null,
+    // true = developer login: Export / Backup / Import JSON dikhte hain.
+    // false = normal user: sirf "Delete all" ka icon.
+    isDeveloper: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -76,6 +80,7 @@ fun HistoryScreen(
     var expandedId by remember { mutableStateOf<Long?>(null) }
     var billToDelete by remember { mutableStateOf<Bill?>(null) }
     var billToReceive by remember { mutableStateOf<Bill?>(null) }
+    var billToWhatsApp by remember { mutableStateOf<Bill?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
@@ -100,12 +105,34 @@ fun HistoryScreen(
     fun runExport(fileName: String, content: String) {
         val ex = exporter
         if (ex == null) {
-            scope.launch { snackbar.showSnackbar("Export setup missing: Pass exporter = ... to HistoryScreen") }
+            scope.launch { snackbar.showSnackbar("Export setup missing: pass exporter = ... to HistoryScreen") }
             return
         }
         scope.launch {
             val where = ex.saveText(fileName, content)
             snackbar.showSnackbar(if (where != null) "Saved: $where" else "Export failed")
+        }
+    }
+
+    fun runImport() {
+        val imp = importer
+        if (imp == null) {
+            scope.launch { snackbar.showSnackbar("Couldn't setup File importer") }
+            return
+        }
+        scope.launch {
+            val text = imp.pickJsonFile()
+            if (!text.isNullOrBlank()) {
+                val added = repository.importFromJson(text)
+                when {
+                    added == null -> snackbar.showSnackbar("Import failed. Check the file format.")
+                    added == 0 -> snackbar.showSnackbar("Nothing new to import (these bills already exist).")
+                    else -> {
+                        reload()
+                        snackbar.showSnackbar("$added bills imported.")
+                    }
+                }
+            }
         }
     }
 
@@ -116,6 +143,7 @@ fun HistoryScreen(
 
     val todayDay = nowIso().take(10)
 
+    // Search + Date filter + Pending filter, TEENO ek saath chalte hain
     val filtered = remember(bills, query, dateFilter, customDay, onlyDue, todayDay) {
         val month = todayDay.take(7)
         bills.orEmpty().filter { bill ->
@@ -153,10 +181,10 @@ fun HistoryScreen(
                 DateFilter.ALL -> "SHOWING: ALL BILLS"
                 DateFilter.TODAY -> "SHOWING: TODAY (${isoDayToDisplay(todayDay)})"
                 DateFilter.MONTH -> "SHOWING: THIS MONTH (${todayDay.drop(5).take(2)}-${todayDay.take(4)})"
-                DateFilter.CUSTOM -> "SHOWING: SELECTED DATA ($customLabel)"
+                DateFilter.CUSTOM -> "SHOWING: SELECTED DATE ($customLabel)"
             }
         )
-        if (onlyDue) append("  •  PENDING AMOUNT")
+        if (onlyDue) append("  •  PENDING PAYMENT")
         if (query.isNotBlank()) append("  •  Search: \"$query\"")
     }
 
@@ -192,55 +220,43 @@ fun HistoryScreen(
                     IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                         Icon(if (searching) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search")
                     }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                    if (isDeveloper) {
+                        // Developer: poora menu (Export / Backup / Import / Delete all)
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                            }
+                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Export CSV (Only visible list)") },
+                                    onClick = {
+                                        showMenu = false
+                                        runExport("bills_$periodFile.csv", billsToCsv(filtered))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("JSON Export (Backup Create)") },
+                                    onClick = {
+                                        showMenu = false
+                                        val all = bills
+                                        if (all != null) runExport("billing_backup_$todayDay.json", billsToBackupJson(all))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("JSON Import (Backup Restore)") },
+                                    onClick = { showMenu = false; runImport() },
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Delete all History", color = Color.Red) },
+                                    onClick = { showMenu = false; confirmClearAll = true },
+                                )
+                            }
                         }
-                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Export CSV (Only visible list)") },
-                                onClick = {
-                                    showMenu = false
-                                    runExport("bills_$periodFile.csv", billsToCsv(filtered))
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("All Backup (JSON)") },
-                                onClick = {
-                                    showMenu = false
-                                    val all = bills
-                                    if (all != null) runExport("billing_backup_$todayDay.json", billsToBackupJson(all))
-                                },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Delete all History", color = Color.Red) },
-                                onClick = { showMenu = false; confirmClearAll = true },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("JSON Import (Backup Restore)") },
-                                onClick = {
-                                    showMenu = false
-                                    val imp = importer
-                                    if (imp == null) {
-                                        scope.launch { snackbar.showSnackbar("Couldn't setup File importer") }
-                                    } else {
-                                        scope.launch {
-                                            val jsonString = imp.pickJsonFile()
-                                            if (!jsonString.isNullOrBlank()) {
-                                                val success = repository.importFromJson(jsonString)
-                                                if (success) {
-                                                    reload()
-                                                    snackbar.showSnackbar("Data successfully imported.")
-                                                } else {
-                                                    snackbar.showSnackbar("Import failed. Check File format.")
-                                                }
-                                            }
-                                        }
-                                    }
-                                },
-                            )
+                    } else {
+                        // Normal user: sirf Delete all ka icon
+                        IconButton(onClick = { confirmClearAll = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete all history", tint = Color.Red)
                         }
                     }
                 },
@@ -297,7 +313,7 @@ fun HistoryScreen(
                         else -> LazyColumn(
                             Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             items(filtered, key = { it.id }) { bill ->
                                 ModernBillCard(
@@ -307,17 +323,7 @@ fun HistoryScreen(
                                     onDelete = { billToDelete = bill },
                                     onEdit = { onEdit(bill) },
                                     onReceive = { billToReceive = bill },
-                                    onWhatsApp = {
-                                        if (bill.phone.isBlank()) {
-                                            scope.launch { snackbar.showSnackbar("The customer's number is not on this bill.") }
-                                        } else {
-                                            try {
-                                                uriHandler.openUri(whatsAppUrl(bill.phone, buildBillMessage(bill)))
-                                            } catch (e: Throwable) {
-                                                scope.launch { snackbar.showSnackbar("WhatsApp could not be opened.") }
-                                            }
-                                        }
-                                    },
+                                    onWhatsApp = { billToWhatsApp = bill },
                                     onPrint = {
                                         scope.launch {
                                             try {
@@ -348,6 +354,7 @@ fun HistoryScreen(
         }
     }
 
+    // ---------- Calendar ----------
     if (showDatePicker) {
         val pickerState = rememberDatePickerState(
             initialSelectedDateMillis = isoDayToEpochMillis(customDay ?: todayDay)
@@ -369,6 +376,34 @@ fun HistoryScreen(
         }
     }
 
+    // ---------- WhatsApp: kis number par bhejna hai ----------
+    billToWhatsApp?.let { bill ->
+        WhatsAppSendDialog(
+            customerName = bill.customer,
+            savedPhone = bill.phone,
+            onDismiss = { billToWhatsApp = null },
+            onSend = { number, saveOnBill ->
+                billToWhatsApp = null
+                try {
+                    uriHandler.openUri(whatsAppUrlFor(number, buildBillMessage(bill)))
+                } catch (e: Throwable) {
+                    scope.launch { snackbar.showSnackbar("WhatsApp could not be opened.") }
+                }
+                if (saveOnBill) {
+                    scope.launch {
+                        try {
+                            repository.updatePhone(bill.id, toStoredPhone(number))
+                            reload()
+                        } catch (e: Throwable) {
+                            snackbar.showSnackbar("Could not save the number: ${e.message ?: e}")
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    // ---------- Dialogs ----------
     billToDelete?.let { bill ->
         ConfirmDialog("Delete Bill", "Do you want to delete #${bill.id} (${bill.customer}) bill?", "Delete", {
             billToDelete = null
@@ -440,7 +475,7 @@ private fun HistorySummary(count: Int, sale: Double, due: Double, periodLabel: S
     ) {
         StatCard("BILLS", count.toString(), Color(0xFF1E293B), Modifier.weight(1f))
         StatCard("SALE • $periodLabel", "Rs ${formatMoney(sale)}", AppGreen, Modifier.weight(1.4f))
-        StatCard("Pending", "Rs ${formatMoney(due)}", DueColor, Modifier.weight(1.2f))
+        StatCard("PENDING", "Rs ${formatMoney(due)}", DueColor, Modifier.weight(1.2f))
     }
 }
 
@@ -471,51 +506,54 @@ private fun ModernBillCard(
     onWhatsApp: () -> Unit,
     onReceive: () -> Unit,
 ) {
+    val pending = bill.balance > 0.005
+    val statusColor = if (pending) DueColor else PaidColor
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column {
+            // ---------- Header ----------
             Row(
-                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
+                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(44.dp).background(AppGreen.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Person, contentDescription = null, tint = AppGreen)
+                // Gol avatar: naam ka pehla harf, rang = paid (hara) / pending (narangi)
+                Box(Modifier.size(44.dp).background(statusColor.copy(alpha = 0.14f), CircleShape), contentAlignment = Alignment.Center) {
+                    Text(
+                        bill.customer.trim().take(1).uppercase().ifBlank { "?" },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = statusColor,
+                    )
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(bill.customer, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color(0xFF1E293B), maxLines = 1)
-                    Spacer(Modifier.size(2.dp))
+                    Text(bill.customer, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF1E293B), maxLines = 1)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.Gray)
+                        Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
                         Spacer(Modifier.width(4.dp))
-                        Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray)
+                        Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray, maxLines = 1)
                     }
                     Text("#${bill.id}  •  ${displayDate(bill.date)}", fontSize = 12.sp, color = Color.Gray)
 
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (bill.balance > 0.005) {
-                            AmountTag("Pending Rs ${formatMoney(bill.balance)}", DueColor)
-                        } else {
-                            AmountTag("PAID", PaidColor)
-                        }
-                    }
-                    if (bill.discount > 0.0 || bill.extraCharges > 0.0) {
-                        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (bill.discount > 0.0) AmountTag("Discount - Rs ${formatMoney(bill.discount)}", DiscountColor)
-                            if (bill.extraCharges > 0.0) AmountTag("Extra + Rs ${formatMoney(bill.extraCharges)}", ExtraColor)
-                        }
+                        if (pending) AmountTag("Pending Rs ${formatMoney(bill.balance)}", DueColor)
+                        else AmountTag("PAID", PaidColor)
+                        if (bill.discount > 0.0) AmountTag("Disc - ${formatMoney(bill.discount)}", DiscountColor)
+                        if (bill.extraCharges > 0.0) AmountTag("Extra + ${formatMoney(bill.extraCharges)}", ExtraColor)
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Rs ${formatMoney(bill.grandTotal)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppGreen)
+                    Text("Rs ${formatMoney(bill.grandTotal)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0F172A))
                     Spacer(Modifier.size(4.dp))
                     Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color.Gray)
                 }
             }
 
+            // ---------- Detail ----------
             if (expanded) {
                 HorizontalDivider(color = Color(0xFFF1F5F9))
                 Spacer(Modifier.size(6.dp))
@@ -534,7 +572,7 @@ private fun ModernBillCard(
                     )
                 }
 
-                if (bill.balance > 0.005) {
+                if (pending) {
                     Button(
                         onClick = onReceive,
                         shape = RoundedCornerShape(10.dp),

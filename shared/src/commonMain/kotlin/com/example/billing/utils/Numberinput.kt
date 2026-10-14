@@ -15,6 +15,13 @@ fun sanitizeDecimal(input: String): String {
     return sb.toString()
 }
 
+/** Phone field ke liye: digits aur sirf SHURU ka '+'. "+971 50-123" -> "+97150123" */
+fun sanitizePhone(input: String): String {
+    val trimmed = input.trim()
+    val digits = trimmed.filter { it.isDigit() }
+    return if (trimmed.startsWith("+")) "+$digits" else digits
+}
+
 /** 0.0 -> ""  |  1500.0 -> "1500"  |  10000000.0 -> "10000000" (1.0E7 NAHI)  |  99.5 -> "99.5" */
 fun Double.toInputString(): String {
     if (this <= 0.0) return ""

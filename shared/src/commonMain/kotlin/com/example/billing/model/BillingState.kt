@@ -4,19 +4,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.example.billing.data.masterItems
 import com.example.billing.utils.resolveDiscount
 
 private var idCounter = 0L
 private fun nextId(): Long = idCounter++
-
-/**
- * "Item ka pichla rate" yaad rakhne ki diary.
- * Billing screen khulte hi repository se bhar di jati hai: { "Fan" -> "1500", "Bulb" -> "120" }
- */
-object RateMemory {
-    var rates: Map<String, String> = emptyMap()
-}
 
 class ItemState(val name: String) {
     var qty by mutableStateOf("")
@@ -31,12 +22,17 @@ class RoomState {
     val id: Long = nextId()
     var name by mutableStateOf("")
     var expanded by mutableStateOf(true)
-    // Master items se predefined list banane ke bajaye mutable state list rakhein
     val items = mutableStateListOf<ItemState>()
     val total: Double get() = items.sumOf { it.total }
 
     fun addItem(name: String) {
         items.add(ItemState(name))
+    }
+
+    /** Wohi item us ke neeche dobara (alag rate ke liye). */
+    fun duplicateItem(item: ItemState) {
+        val i = items.indexOf(item)
+        if (i >= 0) items.add(i + 1, ItemState(item.name)) else items.add(ItemState(item.name))
     }
 
     fun removeItem(item: ItemState) {
@@ -55,7 +51,7 @@ class BillingFormState {
     var discount by mutableStateOf("")
     var discountIsPercent by mutableStateOf(false)   // false = Rs, true = %
     var extraCharges by mutableStateOf("")
-    var received by mutableStateOf("")               // khali = poora paisa mila
+    var received by mutableStateOf("")               // khali = 0 mila
     val rooms = mutableStateListOf(RoomState())
 
     val subtotal: Double get() = rooms.sumOf { it.total }
@@ -65,10 +61,10 @@ class BillingFormState {
     val extraValue: Double get() = extraCharges.toDoubleOrNull() ?: 0.0
     val grandTotal: Double get() = (subtotal - discountValue + extraValue).coerceAtLeast(0.0)
 
-    /** null = poora paisa mila. */
     /** Blank = 0 mila. Koi amount likhi ho to wohi. */
     val receivedValue: Double get() = received.toDoubleOrNull() ?: 0.0
     val balance: Double get() = (grandTotal - receivedValue).coerceAtLeast(0.0)
+
     val hasAnyItem: Boolean get() = rooms.any { r -> r.items.any { it.total > 0.0 } }
     val hasIncompleteItem: Boolean get() = rooms.any { r -> r.items.any { it.isIncomplete } }
 

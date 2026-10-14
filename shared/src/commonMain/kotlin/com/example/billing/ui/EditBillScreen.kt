@@ -1,15 +1,12 @@
 package com.example.billing.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -25,11 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.billing.data.BillRepository
-import com.example.billing.data.masterItems
 import com.example.billing.model.Bill
 import com.example.billing.model.ItemData
 import com.example.billing.model.RoomData
@@ -37,6 +32,7 @@ import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.resolveDiscount
 import com.example.billing.utils.sanitizeDecimal
+import com.example.billing.utils.sanitizePhone
 import com.example.billing.utils.toInputString
 import kotlinx.coroutines.launch
 
@@ -54,6 +50,13 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
     var name by mutableStateOf(initialName)
     val items = mutableStateListOf<EditItem>().apply { addAll(initialItems) }
     val total: Double get() = items.sumOf { it.total }
+
+    /** Wohi item us ke neeche dobara (alag rate ke liye). */
+    fun duplicate(item: EditItem) {
+        val i = items.indexOf(item)
+        val copy = EditItem(item.name, "", "")
+        if (i >= 0) items.add(i + 1, copy) else items.add(copy)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,7 +74,8 @@ fun EditBillScreen(
     var discount by remember { mutableStateOf(bill.discount.toInputString()) }
     var extraCharges by remember { mutableStateOf(bill.extraCharges.toInputString()) }
     var discountIsPercent by remember { mutableStateOf(false) }
-    var received by remember { mutableStateOf(bill.paidAmount?.let { if (it <= 0.0) "0" else it.toInputString() } ?: "") }
+    // Blank = 0 received (Billing screen jaisa). bill.received purane bills (null = poora mila) ko bhi sahi sambhalta hai.
+    var received by remember { mutableStateOf(bill.received.toInputString()) }
     var isDirty by remember { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
     var addItemFor by remember { mutableStateOf<EditRoom?>(null) }
@@ -90,13 +94,15 @@ fun EditBillScreen(
     val discountValue = resolveDiscount(subtotal, discount, discountIsPercent)
     val extraValue = extraCharges.toDoubleOrNull() ?: 0.0
     val grandTotal = (subtotal - discountValue + extraValue).coerceAtLeast(0.0)
-    val receivedValue = received.toDoubleOrNull()
+    val receivedValue = received.toDoubleOrNull() ?: 0.0
+    val pending = (grandTotal - receivedValue).coerceAtLeast(0.0)
 
     fun requestBack() {
         if (isDirty) showDiscard = true else onClose()
     }
 
     fun save() {
+        if (isSaving) return
         val incompleteItem = rooms.asSequence()
             .flatMap { room -> room.items.map { room to it } }
             .firstOrNull { (_, item) -> item.isIncomplete }
@@ -111,7 +117,7 @@ fun EditBillScreen(
                 "Room \"$roomName\" -> \"$itemName\" $missing is missing."
             }
             discountValue > subtotal -> "Discount is greater than subtotal."
-            receivedValue != null && receivedValue > grandTotal + 0.005 -> "Received is greater than total."
+            receivedValue > grandTotal + 0.005 -> "Received is greater than total."
             else -> null
         }
 
@@ -163,27 +169,32 @@ fun EditBillScreen(
                 },
             )
         },
+        // Chhota bottom bar: left me total, right me chhota Save button
         bottomBar = {
             Surface(shadowElevation = 8.dp, color = Color.White) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    AmountBreakdown(
-                        subtotal = subtotal,
-                        discount = discountValue,
-                        extra = extraValue,
-                        grandTotal = grandTotal,
-                        received = receivedValue,
-                    )
-                    Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
+                        Text("Rs ${formatMoney(grandTotal)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        if (pending > 0.005) {
+                            Text("Pending: Rs ${formatMoney(pending)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DueColor)
+                        }
+                    }
                     Button(
                         onClick = { save() },
                         enabled = !isSaving,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+                        modifier = Modifier.height(40.dp),
                     ) {
                         if (isSaving) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                         } else {
-                            Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Save", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -194,7 +205,7 @@ fun EditBillScreen(
             LazyColumn(
                 Modifier.widthIn(max = 900.dp).fillMaxWidth().fillMaxHeight(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item {
                     SectionCard(title = "Customer Details") {
@@ -209,9 +220,10 @@ fun EditBillScreen(
                         )
                         OutlinedTextField(
                             value = phone,
-                            onValueChange = { phone = it.filter { c -> c.isDigit() }; isDirty = true },
+                            onValueChange = { phone = sanitizePhone(it); isDirty = true },
                             label = { Text("Phone Number") },
                             leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                            supportingText = { Text("For another country use +code, e.g. +923012345678") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             shape = RoundedCornerShape(12.dp),
@@ -248,7 +260,14 @@ fun EditBillScreen(
                             value = received,
                             onValueChange = { received = sanitizeDecimal(it); isDirty = true },
                             label = { Text("Received Amount (Rs)") },
-                            supportingText = { Text("Blank means no amount received.") },
+                            supportingText = { Text("Blank = nothing received. Tap Full if fully paid.") },
+                            trailingIcon = {
+                                TextButton(
+                                    onClick = { received = grandTotal.toInputString(); isDirty = true },
+                                    enabled = grandTotal > 0.0,
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                ) { Text("Full", fontWeight = FontWeight.Bold) }
+                            },
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -279,34 +298,34 @@ fun EditBillScreen(
                         onDeleteRoom = { roomToDelete = room },
                     )
                 }
+
+                // Poora hisaab (bottom bar chhota rakhne ke liye yahan dikhaya)
+                item {
+                    SectionCard(title = "Summary") {
+                        AmountBreakdown(
+                            subtotal = subtotal,
+                            discount = discountValue,
+                            extra = extraValue,
+                            grandTotal = grandTotal,
+                            received = receivedValue,
+                        )
+                    }
+                }
             }
         }
     }
 
     addItemFor?.let { room ->
-        AlertDialog(
-            onDismissRequest = { addItemFor = null },
-            title = { Text("Add Item") },
-            text = {
-                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                    masterItems.forEach { name ->
-                        Text(
-                            name,
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { room.items.add(EditItem(name, "", "")); isDirty = true; addItemFor = null }
-                                .padding(vertical = 12.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { addItemFor = null }) { Text("Cancel") } },
+        AddItemDialog(
+            onPick = { name -> room.items.add(EditItem(name, "", "")); isDirty = true; addItemFor = null },
+            onDismiss = { addItemFor = null },
         )
     }
 
     roomToDelete?.let { room ->
         ConfirmDialog(
             "Delete Room",
-            "\"${room.name.ifBlank { "Room" }}\" This room and all its item will remove. Are you sure?",
+            "\"${room.name.ifBlank { "Room" }}\" and all its items will be removed. Are you sure?",
             "Delete",
             { rooms.remove(room); isDirty = true; roomToDelete = null },
             { roomToDelete = null },
@@ -370,39 +389,25 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
             }
             HorizontalDivider(color = Color(0xFFEEEEEE))
 
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (room.items.isEmpty()) {
-                    Text(
-                        "No item in this room",
-                        fontSize = 13.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                } else {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Item", Modifier.weight(3f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                        Text("Qty", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                        Text("Rate", Modifier.weight(1.2f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-                        Text("Total", Modifier.weight(1.4f), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.End)
-                        Spacer(Modifier.width(36.dp))
-                    }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Color(0xFFF0F0F0))
-
-                    room.items.forEach { item ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .background(if (item.isIncomplete) Color(0xFFFFEBEE) else Color.Transparent, RoundedCornerShape(8.dp))
-                                .padding(vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(item.name, Modifier.weight(3f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            CompactNumberField(item.qty, { item.qty = it; onChanged() }, Modifier.weight(1.2f))
-                            CompactNumberField(item.rate, { item.rate = it; onChanged() }, Modifier.weight(1.2f))
-                            Text(formatMoney(item.total), Modifier.weight(1.4f), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppGreen, textAlign = TextAlign.End)
-                            IconButton(onClick = { room.items.remove(item); onChanged() }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Default.Delete, contentDescription = "Remove item", tint = Color.Red, modifier = Modifier.size(16.dp))
-                            }
-                        }
+                    Text("No item in this room", fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(vertical = 4.dp))
+                }
+                room.items.forEachIndexed { index, item ->
+                    key(item) {
+                        val occurrence = room.items.take(index + 1).count { it.name == item.name }
+                        ItemEntryCard(
+                            name = item.name,
+                            occurrence = occurrence,
+                            qty = item.qty,
+                            onQtyChange = { item.qty = it; onChanged() },
+                            rate = item.rate,
+                            onRateChange = { item.rate = it; onChanged() },
+                            total = item.total,
+                            isIncomplete = item.isIncomplete,
+                            onDuplicate = { room.duplicate(item); onChanged() },
+                            onDelete = { room.items.remove(item); onChanged() },
+                        )
                     }
                 }
 

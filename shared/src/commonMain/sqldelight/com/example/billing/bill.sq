@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS BillEntity (
     date TEXT NOT NULL,
     discount REAL NOT NULL DEFAULT 0.0,
     extraCharges REAL NOT NULL DEFAULT 0.0,
-    -- Kitna paisa mila. NULL = poora paisa mil chuka (purane bills bhi isi me aate hain)
     paidAmount REAL
 );
 
@@ -28,6 +27,9 @@ UPDATE BillEntity SET customer = ?, phone = ?, data = ?, discount = ?, extraChar
 
 updatePaid:
 UPDATE BillEntity SET paidAmount = ? WHERE id = ?;
+
+updatePhone:
+UPDATE BillEntity SET phone = ? WHERE id = ?;
 
 deleteBill:
 DELETE FROM BillEntity WHERE id = ?;

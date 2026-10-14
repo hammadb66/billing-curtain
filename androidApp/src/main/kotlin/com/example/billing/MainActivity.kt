@@ -9,6 +9,7 @@ import com.example.billing.pdf.AndroidPdfPrinter
 import com.example.billing.utils.AndroidFileExporter
 import com.example.billing.utils.AndroidFileImporter
 import com.example.billing.utils.FilePickerRegistry
+import com.example.billing.utils.FileSaveRegistry
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,6 +21,15 @@ class MainActivity : ComponentActivity() {
 
         val jsonPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             FilePickerRegistry.onFilePicked(uri)
+        }
+
+        // User se save location lene ke liye launcher
+        val saveDocumentLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            FileSaveRegistry.onFileLocationPicked(uri)
+        }
+
+        FileSaveRegistry.register { defaultName ->
+            saveDocumentLauncher.launch(defaultName) // Yahan "input =" hata diya gaya hai
         }
 
         setContent {

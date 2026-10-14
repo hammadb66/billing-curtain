@@ -5,19 +5,70 @@ import com.example.billing.model.Bill
 /** Pakistan ka code. Dusre mulk ke liye yahan badal dein. */
 const val DEFAULT_COUNTRY_CODE = "92"
 
-/** "0300-1234567" -> "923001234567" (WhatsApp ko country code ke saath number chahiye). */
-fun normalizeWhatsAppNumber(phone: String): String {
-    val digits = phone.filter { it.isDigit() }
+/** Dialog me dikhne wale mulk (label, code). "Other" dialog khud add karta hai. */
+class WaCountry(val label: String, val code: String)
+
+val waCountries = listOf(
+    WaCountry("PK", "92"),
+    WaCountry("UAE", "971"),
+    WaCountry("UK", "44"),
+    WaCountry("US/CA", "1"),
+    WaCountry("KSA", "966"),
+    WaCountry("Oman", "968"),
+    WaCountry("Qatar", "974"),
+)
+
+/**
+ * Bill par likha number -> WhatsApp ka number (country code ke saath, bina '+').
+ *   "0300-1234567"    -> "923001234567"   (0 se shuru = Pakistan)
+ *   "+971501234567"   -> "971501234567"   (+ ho to country code maujood hai)
+ *   "00447911123456"  -> "447911123456"
+ *   "971501234567"    -> "971501234567"
+ */
+fun normalizeWhatsAppNumber(raw: String): String {
+    val trimmed = raw.trim()
+    val digits = trimmed.filter { it.isDigit() }
     return when {
+        trimmed.startsWith("+") -> digits
         digits.startsWith("00") -> digits.drop(2)
         digits.startsWith("0") -> DEFAULT_COUNTRY_CODE + digits.drop(1)
+        digits.length == 10 && digits.startsWith("3") -> DEFAULT_COUNTRY_CODE + digits
         else -> digits
     }
 }
 
-/** WhatsApp ka link. Android par WhatsApp app khulti hai, PC par browser (WhatsApp Web). */
+/** WhatsApp number sahi lagta hai? (E.164: 8 se 15 digit; Pakistan ke liye 92 + 3xxxxxxxxx) */
+fun isValidWhatsAppNumber(e164: String): Boolean {
+    if (e164.length !in 8..15 || e164.any { !it.isDigit() }) return false
+    if (e164.startsWith("92")) return e164.length == 12 && e164[2] == '3'
+    return true
+}
+
+/** Mulk chun kar likha hua local number -> poora number. ("UAE", "050 123 4567") -> "971501234567" */
+fun buildNumberFromCountry(countryCode: String, local: String): String {
+    val digits = local.filter { it.isDigit() }.trimStart('0')
+    // Agar user ne country code samet poora number likh diya ho to dobara na lagayen
+    if (digits.startsWith(countryCode) && digits.length >= countryCode.length + 7) return digits
+    return countryCode + digits
+}
+
+/** "Other" ke liye: user poora number country code ke saath likhta hai. */
+fun buildNumberFromFull(raw: String): String {
+    val d = raw.filter { it.isDigit() }
+    return if (d.startsWith("00")) d.drop(2) else d
+}
+
+/** Bill me wapas save karne ke liye: Pakistan ka number "03xx..." me, baqi "+971..." me. */
+fun toStoredPhone(e164: String): String =
+    if (e164.startsWith("92") && e164.length == 12) "0" + e164.drop(2) else "+$e164"
+
+/** Number (E.164, bina +) aur message se WhatsApp ka link. Android par app khulti hai, PC par WhatsApp Web. */
+fun whatsAppUrlFor(e164: String, message: String): String =
+    "https://wa.me/$e164?text=${urlEncode(message)}"
+
+/** Purani call ke liye: bill par likha number seedha use karta hai. */
 fun whatsAppUrl(phone: String, message: String): String =
-    "https://wa.me/${normalizeWhatsAppNumber(phone)}?text=${urlEncode(message)}"
+    whatsAppUrlFor(normalizeWhatsAppNumber(phone), message)
 
 /** Bill ka chhota text summary (WhatsApp *star* se bold hota hai). */
 fun buildBillMessage(bill: Bill): String = buildString {
@@ -25,7 +76,6 @@ fun buildBillMessage(bill: Bill): String = buildString {
     appendLine("Invoice #${bill.id}")
     appendLine("Date: ${displayDate(bill.date)}")
     appendLine("Customer: ${bill.customer}")
-    appendLine("Customer Number: ${bill.phone}")
     appendLine()
 
     for (room in bill.rooms) {
@@ -44,12 +94,12 @@ fun buildBillMessage(bill: Bill): String = buildString {
 
     if (!bill.isPaid) {
         appendLine("Received: Rs ${formatMoney(bill.received)}")
-        appendLine("*Baqaya: Rs ${formatMoney(bill.balance)}*")
+        appendLine("*Pending: Rs ${formatMoney(bill.balance)}*")
     } else {
         appendLine("Status: PAID")
     }
     appendLine()
-    append("Shukriya!")
+    append("Thank you!")
 }
 
 private const val HEX = "0123456789ABCDEF"

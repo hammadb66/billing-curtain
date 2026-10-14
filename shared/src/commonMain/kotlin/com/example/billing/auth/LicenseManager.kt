@@ -80,8 +80,8 @@ class LicenseManager(
         if (mine != null) {
             if (mine.blocked) {
                 return Online.Denied(
-                    "Is laptop ko chalane ki ijazat nahi hai (band hai ya laptops ki had poori hai). " +
-                        "Developer se rabta karein.\n(Device: $shortId)"
+                    "Operation of this laptop is not permitted (it is banned, or the limit for laptops has been reached). " +
+                        "Contact the developer.\n(Device: $shortId)"
                 )
             }
             firebase.touchDevice(shopId, deviceId, now)
@@ -93,12 +93,12 @@ class LicenseManager(
             // Koshish ka record rakh lo (BLOCKED ke taur par), taake developer ko admin panel me nazar aaye
             firebase.registerDevice(shopId, deviceId, device.label, now, blocked = true)
             return Online.Denied(
-                "Is dukaan ke laptops ki had (${lic.maxDevices}) poori ho chuki hai. " +
-                    "Naya laptop lagane ke liye developer se rabta karein.\n(Device: $shortId)"
+                        "This shop's range of laptops(${lic.maxDevices}) has been completed. " +
+                                "Contact the developer to set up the new laptop\n(Device: $shortId)"
             )
         }
         val problem = firebase.registerDevice(shopId, deviceId, device.label, now)
-        return if (problem == null) Online.Ok(lic.shopName) else Online.Unreachable("laptop darj nahi hua: $problem")
+        return if (problem == null) Online.Ok(lic.shopName) else Online.Unreachable("The laptop was not registered: $problem")
     }
 
     // ---------- software khulte waqt ----------
@@ -132,8 +132,8 @@ class LicenseManager(
         // Mohar na mile ya ghalat ho = kisi ne database me chhed chhaad ki, ya kabhi verify hi nahi hua
         if (ok == null || at == null || sig == null || sig != sign(shopId, ok, at, message)) {
             return LicenseState.Blocked(
-                "License verify nahi ho saka. Internet se connect kar ke ek dafa dobara try karein.\n\n" +
-                    "Wajah: $reason"
+                "The license could not be verified. Please connect to the internet and try again.\n\n" +
+                    "Reason: $reason"
             )
         }
         if (!ok) return LicenseState.Blocked(message.ifBlank { DEFAULT_BLOCK_MESSAGE })
@@ -143,7 +143,8 @@ class LicenseManager(
         return if (age in 0..graceMillis) {
             LicenseState.Allowed(offline = true)
         } else {
-            LicenseState.Blocked("Kaafi din se license verify nahi hua. Internet se connect kar ke dobara try karein.")
+            LicenseState.Blocked(
+                    "The license hasn't been verified for quite some time. Connect to the internet and try again.")
         }
     }
 
@@ -174,7 +175,7 @@ class LicenseManager(
     /** Shop code laga kar activate karna. null = kamyab, warna error ka text */
     suspend fun activate(rawCode: String): String? {
         val code = rawCode.trim()
-        if (!isValidShopId(code)) return "Shop code 3 se 40 harf ka ho (sirf a-z, A-Z, 0-9, _ ya -)"
+        if (!isValidShopId(code)) return "Shop code must be 3 to 40 characters long (sirf a-z, A-Z, 0-9, _ ya -)"
         return when (val r = checkOnline(code)) {
             is Online.Ok -> {
                 settings.put(SettingKeys.SHOP_ID, code)
@@ -183,15 +184,15 @@ class LicenseManager(
                 null
             }
             is Online.Denied -> r.message
-            Online.NotFound -> "Ye Shop Code nahi mila. Dobara check karein."
-            is Online.Unreachable -> "Internet check karein aur dobara try karein.\n(Wajah: ${r.reason})"
+            Online.NotFound -> "This shop code was not found. Please check again."
+            is Online.Unreachable -> "Check the internet and try again.\n(Reason: ${r.reason})"
         }
     }
 
     companion object {
         const val DEFAULT_BLOCK_MESSAGE =
-            "Aap ki subscription khatam ho gayi hai. Barae meherbani developer se rabta karein."
+            "Your subscription has expired. Please contact the developer."
         const val NOT_FOUND_MESSAGE =
-            "Is shop ka license nahi mila. Barae meherbani developer se rabta karein."
+            "The license for this shop was not found. Please contact the developer."
     }
 }

@@ -171,6 +171,7 @@ fun App(
                             onEdit = { screen = Screen.Edit(it) },
                             exporter = exporter,
                             importer = importer,
+                            isDeveloper = g.dev != null,
                         )
                         is Screen.Edit -> EditBillScreen(
                             bill = current.bill,

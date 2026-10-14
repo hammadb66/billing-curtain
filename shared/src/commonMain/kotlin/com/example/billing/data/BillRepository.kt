@@ -3,6 +3,8 @@ package com.example.billing.data
 import com.example.billing.BillingDatabase
 import com.example.billing.model.Bill
 import com.example.billing.model.RoomData
+import com.example.billing.utils.BillBackup
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
@@ -48,19 +50,6 @@ class BillRepository(database: BillingDatabase) {
         if (list.isEmpty()) null else CustomerInfo(list.first().customer, list.sumOf { it.balance })
     }
 
-    /** Har item ka sab se naya rate: { "Fan" -> "1500" }. getAllBills newest-first deta hai, isliye pehla mila hua rate hi naya hai. */
-    suspend fun getLastRates(): Map<String, String> {
-        val rates = LinkedHashMap<String, String>()
-        for (bill in getAllBills()) {
-            for (room in bill.rooms) {
-                for (item in room.items) {
-                    if (item.rateValue > 0.0 && item.name !in rates) rates[item.name] = item.rate
-                }
-            }
-        }
-        return rates
-    }
-
     /** Naye bill ka number (id) wapas deta hai, taake PDF me "Invoice #45" likh sakein. */
     suspend fun insertBill(
         customer: String,
@@ -71,7 +60,6 @@ class BillRepository(database: BillingDatabase) {
         extraCharges: Double,
         paidAmount: Double?,
     ): Long = withContext(Dispatchers.Default) {
-        // transaction: insert aur id uthana "ek saath" hon, beech me koi aur bill na ghus jaye
         queries.transactionWithResult {
             queries.insertBill(
                 customer,
@@ -113,6 +101,11 @@ class BillRepository(database: BillingDatabase) {
         withContext(Dispatchers.Default) { queries.updatePaid(paidAmount, id) }
     }
 
+    /** Sirf phone number badalta hai (WhatsApp dialog ke "save this number" ke liye). */
+    suspend fun updatePhone(id: Long, phone: String) {
+        withContext(Dispatchers.Default) { queries.updatePhone(phone, id) }
+    }
+
     suspend fun deleteBill(id: Long) {
         withContext(Dispatchers.Default) { queries.deleteBill(id) }
     }
@@ -121,16 +114,25 @@ class BillRepository(database: BillingDatabase) {
         withContext(Dispatchers.Default) { queries.deleteAll() }
     }
 
+    private fun signature(date: String, phone: String, customer: String, subtotal: Double, discount: Double, extra: Double) =
+        "$date|$phone|$customer|$subtotal|$discount|$extra"
 
-    /** JSON string se backup bills import karta hai. */
-    suspend fun importFromJson(jsonString: String): Boolean = withContext(Dispatchers.Default) {
+    /**
+     * JSON backup se bills wapas laata hai. Jo bill pehle se maujood ho (same date, phone, naam, total)
+     * usay dobara nahi dalta, taake ek hi file do dafa import karne se duplicates na banen.
+     * Wapas: kitne NAYE bills aaye. null = file kharab / format ghalat.
+     */
+    suspend fun importFromJson(jsonString: String): Int? = withContext(Dispatchers.Default) {
         try {
-            val backupList = json.decodeFromString(
-                ListSerializer(com.example.billing.utils.BillBackup.serializer()),
-                jsonString
-            )
+            val backupList = json.decodeFromString(ListSerializer(BillBackup.serializer()), jsonString)
+            val existing = queries.selectAll(this@BillRepository::toBill).executeAsList()
+                .map { signature(it.date, it.phone, it.customer, it.subtotal, it.discount, it.extraCharges) }
+                .toHashSet()
+            var added = 0
             queries.transaction {
                 for (b in backupList) {
+                    val sig = signature(b.date, b.phone, b.customer, b.rooms.sumOf { it.total }, b.discount, b.extraCharges)
+                    if (!existing.add(sig)) continue
                     queries.insertBill(
                         b.customer,
                         b.phone,
@@ -138,15 +140,16 @@ class BillRepository(database: BillingDatabase) {
                         b.date,
                         b.discount,
                         b.extraCharges,
-                        b.paidAmount
+                        b.paidAmount,
                     )
+                    added++
                 }
             }
-            true
+            added
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            e.printStackTrace()
-            false
+            null
         }
     }
-
 }
