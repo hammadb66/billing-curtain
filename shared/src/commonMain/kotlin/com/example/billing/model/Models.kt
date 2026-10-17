@@ -54,4 +54,5 @@ data class Bill(
     val balance: Double get() = (grandTotal - received).coerceAtLeast(0.0)
 
     val isPaid: Boolean get() = balance < 0.005
+
 }
