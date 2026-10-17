@@ -395,7 +395,7 @@ class BillRepository(database: BillingDatabase) {
                             val merged = mergePaid(local.paidAmount, r.paidAmount, local.grandTotal)
                             queries.updatePaid(merged, row.billId)
                             // local ko Firebase wale se naya kar do taake agle push me ye jeete
-                            syncQ.insertSync(row.billId, rid, 1L, row.pushedAt, maxOf(now(), r.updatedAt + 1))
+                            syncQ.insertSync(row.billId, rid, 0L, now(), r.updatedAt)
                             changed = true
                             continue
                         }
