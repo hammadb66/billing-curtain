@@ -69,6 +69,13 @@ fun HistoryScreen(
     // true = developer login: Export / Backup / Import JSON dikhte hain.
     // false = normal user: sirf "Delete all" ka icon.
     isDeveloper: Boolean = false,
+    // Online sync: Firebase se data aaye to list refresh, aur online mode me export Firebase se.
+    syncVersion: Int = 0,
+    cloudExport: (suspend () -> String?)? = null,
+    // Online mode ON hai? (delete-all ka icon normal user se hata diya jata hai, kyunke wo sab laptops se delete karta hai)
+    onlineMode: Boolean = false,
+    // Refresh button: Firebase se naya data mangwata hai. null = button nahi. Wapas: error ka text ya null.
+    onRefresh: (suspend () -> String?)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -83,6 +90,7 @@ fun HistoryScreen(
     var billToWhatsApp by remember { mutableStateOf<Bill?>(null) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
 
     var dateFilter by remember { mutableStateOf(DateFilter.ALL) }
     var customDay by remember { mutableStateOf<String?>(null) }
@@ -136,7 +144,7 @@ fun HistoryScreen(
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(syncVersion) { reload() }
     LaunchedEffect(searching) { if (searching) focusRequester.requestFocus() }
 
     PlatformBackHandler { onBack() }
@@ -149,7 +157,8 @@ fun HistoryScreen(
         bills.orEmpty().filter { bill ->
             val textOk = query.isBlank() ||
                     bill.customer.contains(query, ignoreCase = true) ||
-                    bill.phone.contains(query, ignoreCase = true)
+                    bill.phone.contains(query, ignoreCase = true) ||
+                    bill.invoiceText.contains(query, ignoreCase = true)
             val day = bill.date.take(10)
             val dateOk = when (dateFilter) {
                 DateFilter.ALL -> true
@@ -217,6 +226,26 @@ fun HistoryScreen(
                     }
                 },
                 actions = {
+                    if (onRefresh != null) {
+                        if (refreshing) {
+                            CircularProgressIndicator(
+                                Modifier.padding(horizontal = 12.dp).size(22.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    refreshing = true
+                                    val err = onRefresh()
+                                    refreshing = false
+                                    reload()
+                                    if (err != null) snackbar.showSnackbar("Refresh fail: $err")
+                                }
+                            }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                            }
+                        }
+                    }
                     IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                         Icon(if (searching) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search")
                     }
@@ -238,8 +267,10 @@ fun HistoryScreen(
                                     text = { Text("JSON Export (Backup Create)") },
                                     onClick = {
                                         showMenu = false
-                                        val all = bills
-                                        if (all != null) runExport("billing_backup_$todayDay.json", billsToBackupJson(all))
+                                        scope.launch {
+                                            val content = cloudExport?.invoke() ?: bills?.let { billsToBackupJson(it) }
+                                            if (content != null) runExport("billing_backup_$todayDay.json", content)
+                                        }
                                     },
                                 )
                                 DropdownMenuItem(
@@ -336,7 +367,7 @@ fun HistoryScreen(
                                                         rooms = bill.rooms,
                                                         discount = bill.discount,
                                                         extraCharges = bill.extraCharges,
-                                                        invoiceNo = bill.id,
+                                                        invoiceNo = bill.invoiceText,
                                                         paidAmount = bill.paidAmount,
                                                     ),
                                                 )
@@ -405,7 +436,7 @@ fun HistoryScreen(
 
     // ---------- Dialogs ----------
     billToDelete?.let { bill ->
-        ConfirmDialog("Delete Bill", "Do you want to delete #${bill.id} (${bill.customer}) bill?", "Delete", {
+        ConfirmDialog("Delete Bill", "Do you want to delete ${bill.invoiceText} (${bill.customer}) bill?", "Delete", {
             billToDelete = null
             scope.launch { repository.deleteBill(bill.id); reload() }
         }, { billToDelete = null })
@@ -432,7 +463,15 @@ fun HistoryScreen(
     }
 
     if (confirmClearAll) {
-        ConfirmDialog("Clear History?", "This will delete all saved bills permanently.", "Clear All", {
+        ConfirmDialog(
+            "Clear History?",
+            if (onlineMode) {
+                "ONLINE mode: this will delete ALL bills from this laptop AND from Firebase, so they will disappear " +
+                    "from every laptop of this shop. Take a JSON backup first."
+            } else {
+                "This will delete all saved bills permanently."
+            },
+            "Clear All", {
             confirmClearAll = false
             scope.launch { repository.deleteAll(); reload() }
         }, { confirmClearAll = false })
@@ -450,7 +489,7 @@ private fun ReceivePaymentDialog(bill: Bill, onConfirm: (Double) -> Unit, onDism
         title = { Text("Payment Receive") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${bill.customer}  •  Bill #${bill.id}", fontSize = 13.sp, color = Color.Gray)
+                Text("${bill.customer}  •  Bill ${bill.invoiceText}", fontSize = 13.sp, color = Color.Gray)
                 Text("Pending: Rs ${formatMoney(bill.balance)}", color = DueColor, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = text,
@@ -537,7 +576,7 @@ private fun ModernBillCard(
                         Spacer(Modifier.width(4.dp))
                         Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray, maxLines = 1)
                     }
-                    Text("#${bill.id}  •  ${displayDate(bill.date)}", fontSize = 12.sp, color = Color.Gray)
+                    Text("${bill.invoiceText}  •  ${displayDate(bill.date)}", fontSize = 12.sp, color = Color.Gray)
 
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (pending) AmountTag("Pending Rs ${formatMoney(bill.balance)}", DueColor)

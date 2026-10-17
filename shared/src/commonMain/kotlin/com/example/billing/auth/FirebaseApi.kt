@@ -218,11 +218,18 @@ class FirebaseApi {
         "Check the internet."
     }
 
-    /** Shop aur uske saare laptops ka record mita deta hai. null = kamyab */
-    suspend fun deleteShop(idToken: String, shopId: String): String? = try {
-        val a = httpCall("DELETE", "$db/licenses/$shopId.json?auth=$idToken")
-        val b = httpCall("DELETE", "$db/devices/$shopId.json?auth=$idToken")
-        if (a.code == 200 && b.code == 200) null else "Could not delete (HTTP ${a.code} / ${b.code})"
+    /**
+     * Shop ka license, laptops aur laptops ke logins mita deta hai (shop band ho jata hai).
+     * deleteBills = false (default): shop ke bills Firebase me MAHFOOZ rehte hain (sirf developer dekh sakta hai),
+     * taake baad me customer data mange to mil jaye. true = bills bhi hamesha ke liye mit jate hain.
+     * null = kamyab
+     */
+    suspend fun deleteShop(idToken: String, shopId: String, deleteBills: Boolean = false): String? = try {
+        val nodes = if (deleteBills) listOf("licenses", "devices", "members", "bills") else listOf("licenses", "devices", "members")
+        val codes = nodes.map { node ->
+            httpCall("DELETE", "$db/$node/$shopId.json?auth=$idToken", timeoutMs = 30_000).code
+        }
+        if (codes.all { it == 200 }) null else "Could not delete (HTTP ${codes.joinToString(" / ")}). Rules me members/bills ka developer write publish kiya?"
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -244,7 +251,7 @@ class FirebaseApi {
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        "heck the internet."
+        "Check the internet."
     }
 
     // =============== parsing ===============

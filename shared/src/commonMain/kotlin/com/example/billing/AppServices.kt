@@ -7,6 +7,9 @@ import com.example.billing.auth.FirebaseApi
 import com.example.billing.auth.LicenseManager
 import com.example.billing.data.BillRepository
 import com.example.billing.data.DriverFactory
+import com.example.billing.sync.BillCloudApi
+import com.example.billing.sync.CloudAuth
+import com.example.billing.sync.SyncManager
 
 /** App ke saare "kaam karne wale" objects ek jagah (ek hi database sab share karte hain). */
 class AppServices(
@@ -15,17 +18,22 @@ class AppServices(
     val settings: AppSettings,
     val license: LicenseManager,
     val firebase: FirebaseApi,
+    val sync: SyncManager,
 )
 
 fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): AppServices {
     val database = BillingDatabase(driverFactory.createDriver())
     val settings = AppSettings(database)
     val firebase = FirebaseApi()
+    val bills = BillRepository(database)
+    val license = LicenseManager(settings, firebase, device)
     return AppServices(
-        bills = BillRepository(database),
+        bills = bills,
         auth = AuthRepository(database, settings),
         settings = settings,
-        license = LicenseManager(settings, firebase, device),
+        license = license,
         firebase = firebase,
+        // Online / Offline sync (switch Admin Panel me). deviceId = is laptop ki pehchan.
+        sync = SyncManager(settings, bills, BillCloudApi(CloudAuth(license.deviceId), license.deviceId), license.deviceId),
     )
 }

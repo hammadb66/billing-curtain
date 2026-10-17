@@ -17,6 +17,18 @@ object AppConfig {
     /** Software chalte rehne par kitne minute baad dobara license check ho */
     const val RECHECK_MINUTES = 30L
 
+    /**
+     * Online mode me bhejna baqi ho (net nahi tha) to kitne second baad dobara koshish. Jab kuch baqi na ho
+     * to koi request nahi jati (Firebase ka kharcha nahi).
+     */
+    const val SYNC_RETRY_SECONDS = 30L
+
+    /**
+     * 0 = background me apne aap Firebase se data NAHI mangta (sirf bill banne / edit / delete par, app khulte hi,
+     * aur History ke Refresh button par). Kisi shop me dusre laptop ka data jaldi chahiye to 5-10 rakh den.
+     */
+    const val BACKGROUND_PULL_MINUTES = 0L
+
     /** Naye shop ke liye default kitne laptops/phones ki ijazat ho */
     const val DEFAULT_MAX_DEVICES = 3
 

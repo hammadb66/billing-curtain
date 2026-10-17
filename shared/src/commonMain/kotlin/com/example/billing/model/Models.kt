@@ -36,7 +36,12 @@ data class Bill(
     val extraCharges: Double = 0.0,
     /** Kitna paisa mila. null = poora mil chuka. */
     val paidAmount: Double? = null,
+    /** Invoice number jo customer ko diya gaya, maslan "hammad-05". Purane bills me khali (tab "#id" dikhta hai). */
+    val invoiceLabel: String = "",
 ) {
+    /** Screen / PDF / CSV me jo invoice number dikhana hai. */
+    val invoiceText: String get() = invoiceLabel.ifBlank { "#$id" }
+
     /** Discount / extra se PEHLE ka total. */
     val subtotal: Double get() = rooms.sumOf { it.total }
 

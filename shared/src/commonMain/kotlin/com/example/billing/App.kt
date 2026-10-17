@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +21,7 @@ import com.example.billing.auth.LicenseState
 import com.example.billing.model.Bill
 import com.example.billing.model.BillingFormState
 import com.example.billing.pdf.PdfPrinter
+import com.example.billing.sync.SyncStatus
 import com.example.billing.ui.ActivationScreen
 import com.example.billing.ui.AdminScreen
 import com.example.billing.ui.AppTheme
@@ -72,6 +74,8 @@ fun App(
         var screen by remember { mutableStateOf<Screen>(Screen.Billing) }
         var gate by remember { mutableStateOf<Gate>(Gate.Checking) }
         var offline by remember { mutableStateOf(false) }
+        // true = license theek hai: tab online sync ka background loop chalta hai
+        var licensed by remember { mutableStateOf(false) }
 
         suspend fun runLicenseCheck() {
             gate = Gate.Checking
@@ -80,10 +84,11 @@ fun App(
                 services.license.activate(presetShopCode)
             }
             when (val s = services.license.evaluate()) {
-                LicenseState.NeedActivation -> gate = Gate.NeedActivation
-                is LicenseState.Blocked -> gate = Gate.Blocked(s.message)
+                LicenseState.NeedActivation -> { licensed = false; gate = Gate.NeedActivation }
+                is LicenseState.Blocked -> { licensed = false; gate = Gate.Blocked(s.message) }
                 is LicenseState.Allowed -> {
                     offline = s.offline
+                    licensed = true
                     gate = Gate.Login
                 }
             }
@@ -94,12 +99,18 @@ fun App(
         // 1) Software khulte hi license check
         LaunchedEffect(Unit) { runLicenseCheck() }
 
+        // 1b) Online sync loop (offline mode me ye kuch nahi karta; license band hote hi ruk jata hai)
+        if (licensed) {
+            LaunchedEffect(Unit) { services.sync.runLoop() }
+        }
+
         // 2) Software chalte hue bhi har kuch minute baad check (Firebase se OFF kiya to band ho jaye)
         if (gate is Gate.LoggedIn) {
             LaunchedEffect(Unit) {
                 while (true) {
                     val blocked = services.license.recheck()
                     if (blocked != null) {
+                        licensed = false // sync loop bhi ruk jaye
                         gate = Gate.Blocked(blocked.message)
                         break
                     }
@@ -172,6 +183,12 @@ fun App(
                             exporter = exporter,
                             importer = importer,
                             isDeveloper = g.dev != null,
+                            // Firebase se data aaye to list khud refresh; online mode me JSON export Firebase se
+                            syncVersion = services.sync.dataVersion.collectAsState().value,
+                            cloudExport = { if (services.sync.isOnlineMode()) services.sync.exportCloudJson() else null },
+                            onlineMode = services.sync.status.collectAsState().value != SyncStatus.Disabled,
+                            // Refresh: online ho to Firebase se naya data (aur pending upload), warna sirf list reload
+                            onRefresh = { if (services.sync.isOnlineMode()) services.sync.syncNow() else null },
                         )
                         is Screen.Edit -> EditBillScreen(
                             bill = current.bill,

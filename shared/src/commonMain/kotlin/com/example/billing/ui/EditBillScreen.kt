@@ -164,7 +164,7 @@ fun EditBillScreen(
                 title = {
                     Column {
                         Text("Edit Bill", fontWeight = FontWeight.Bold)
-                        Text("#${bill.id}", fontSize = 12.sp, color = Color.Gray)
+                        Text(bill.invoiceText, fontSize = 12.sp, color = Color.Gray)
                     }
                 },
             )

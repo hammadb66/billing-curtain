@@ -16,7 +16,7 @@ fun buildInvoiceRows(
     rooms: List<RoomData>,
     discount: Double = 0.0,
     extraCharges: Double = 0.0,
-    invoiceNo: Long? = null,
+    invoiceNo: String? = null,
     paidAmount: Double? = null,
 ): List<PdfRow> {
     val rows = mutableListOf<PdfRow>()
@@ -25,7 +25,7 @@ fun buildInvoiceRows(
     }
     rows += PdfRow(left = "INVOICE", right = "Date: $date", bold = true, fontSize = 22f)
     if (invoiceNo != null) {
-        rows += PdfRow(left = "Invoice No: #$invoiceNo", bold = true, fontSize = 14f)
+        rows += PdfRow(left = "Invoice No: $invoiceNo", bold = true, fontSize = 14f)
     }
     rows += PdfRow(kind = RowKind.LINE)
     rows += PdfRow(left = "Customer Name: $customer", bold = true, fontSize = 14f)

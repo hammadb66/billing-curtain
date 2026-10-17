@@ -100,13 +100,14 @@ fun BillingScreen(
                 val extraVal = form.extraValue
                 val paid = form.receivedValue
 
-                val newId = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid)
+                // Invoice number login user ke naam se banta hai (hammad-01, hammad-02...)
+                val invoiceNo = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid, userName)
                 form.reset()
 
                 try {
                     val printed = printer.print(
                         title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
-                        rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = newId, paidAmount = paid),
+                        rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid),
                     )
                     snackText = if (printed) "Bill printed and saved successfully" else "Bill saved. Print cancelled."
                 } catch (e: Throwable) {

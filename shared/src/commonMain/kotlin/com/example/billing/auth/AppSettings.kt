@@ -24,4 +24,8 @@ object SettingKeys {
     const val LIC_CHECKED_AT = "licenseCheckedAt"
     const val LIC_MESSAGE = "licenseMessage"
     const val LIC_SIG = "licenseSig"
+    const val SYNC_MODE = "syncMode" // "online" / "offline"
+    const val SYNC_SHOP = "syncShop" // kis shop ka data is laptop ke sync hisaab me hai
+    const val SYNC_SKEW = "syncSkew" // is laptop ki ghadi aur Firebase server ka farq (millis)
+    fun syncCursor(shopId: String) = "syncCursor_$shopId" // Firebase se kahan tak ka data aa chuka (serverTs)
 }

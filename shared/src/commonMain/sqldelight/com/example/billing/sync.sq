@@ -1,0 +1,92 @@
+-- Online sync ka hisaab. BillEntity ko bilkul nahi chhedta, is liye purane database par bhi chalta hai.
+-- Is file ko Bill.sq / Auth.sq ke saath hi rakhein (same folder).
+
+-- Har bill ka ek "remoteId" (Firebase me key). dirty = 1 matlab abhi Firebase par bhejna baqi hai.
+-- pushedAt > 0 matlab ye bill kabhi Firebase par ja chuka hai. updatedAt = aakhri tabdili ka waqt (millis).
+CREATE TABLE IF NOT EXISTS BillSync (
+    billId INTEGER NOT NULL PRIMARY KEY,
+    remoteId TEXT NOT NULL UNIQUE,
+    dirty INTEGER NOT NULL DEFAULT 1,
+    pushedAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0
+);
+
+-- Jo bill delete hue lekin Firebase ko batana baqi hai (wahan "deleted" nishan lagta hai).
+CREATE TABLE IF NOT EXISTS PendingDelete (
+    remoteId TEXT NOT NULL PRIMARY KEY,
+    deletedAt INTEGER NOT NULL
+);
+
+selectAllSync:
+SELECT * FROM BillSync;
+
+selectSyncByBill:
+SELECT * FROM BillSync WHERE billId = ?;
+
+selectDirty:
+SELECT * FROM BillSync WHERE dirty = 1;
+
+-- Purane bills jin ka abhi koi remoteId nahi bana
+selectUnmappedIds:
+SELECT id FROM BillEntity WHERE id NOT IN (SELECT billId FROM BillSync);
+
+insertSync:
+INSERT OR REPLACE INTO BillSync(billId, remoteId, dirty, pushedAt, updatedAt) VALUES (?, ?, ?, ?, ?);
+
+markDirty:
+UPDATE BillSync SET dirty = 1, updatedAt = ? WHERE billId = ?;
+
+-- Sirf tab clean karta hai jab push ke dauran bill dobara edit na hua ho
+markClean:
+UPDATE BillSync SET dirty = 0, pushedAt = ? WHERE billId = ? AND updatedAt = ?;
+
+deleteSync:
+DELETE FROM BillSync WHERE billId = ?;
+
+deleteAllSync:
+DELETE FROM BillSync;
+
+selectPendingDeletes:
+SELECT * FROM PendingDelete;
+
+insertPendingDelete:
+INSERT OR REPLACE INTO PendingDelete(remoteId, deletedAt) VALUES (?, ?);
+
+queuePendingDeleteAll:
+INSERT OR REPLACE INTO PendingDelete(remoteId, deletedAt)
+SELECT remoteId, CAST(? AS INTEGER) FROM BillSync WHERE pushedAt > 0;
+
+deletePendingDelete:
+DELETE FROM PendingDelete WHERE remoteId = ?;
+
+countDirty:
+SELECT COUNT(*) FROM BillSync WHERE dirty = 1;
+
+countPendingDelete:
+SELECT COUNT(*) FROM PendingDelete;
+
+
+deleteAllPendingDeletes:
+DELETE FROM PendingDelete;
+
+
+-- Invoice number (maslan hammad-05). BillEntity ko chhedta nahi, is liye purane database par bhi chalta hai.
+CREATE TABLE IF NOT EXISTS InvoiceLabel (
+    billId INTEGER NOT NULL PRIMARY KEY,
+    label TEXT NOT NULL
+);
+
+selectLabel:
+SELECT label FROM InvoiceLabel WHERE billId = ?;
+
+selectLabelsLike:
+SELECT label FROM InvoiceLabel WHERE label LIKE ?;
+
+setLabel:
+INSERT OR REPLACE INTO InvoiceLabel(billId, label) VALUES (?, ?);
+
+deleteLabel:
+DELETE FROM InvoiceLabel WHERE billId = ?;
+
+deleteAllLabels:
+DELETE FROM InvoiceLabel;

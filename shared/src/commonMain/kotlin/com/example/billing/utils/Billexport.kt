@@ -17,6 +17,7 @@ data class BillBackup(
     val discount: Double,
     val extraCharges: Double,
     val paidAmount: Double? = null,
+    val invoiceLabel: String = "",
 )
 
 private val backupJson = Json { prettyPrint = true; encodeDefaults = true }
@@ -24,7 +25,7 @@ private val backupJson = Json { prettyPrint = true; encodeDefaults = true }
 fun billsToBackupJson(bills: List<Bill>): String =
     backupJson.encodeToString(
         ListSerializer(BillBackup.serializer()),
-        bills.map { BillBackup(it.id, it.customer, it.phone, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount) },
+        bills.map { BillBackup(it.id, it.customer, it.phone, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount, it.invoiceLabel) },
     )
 
 private fun csvCell(text: String): String =
@@ -37,7 +38,7 @@ fun billsToCsv(bills: List<Bill>): String {
     for (b in bills) {
         sb.append(
             listOf(
-                "#${b.id}",
+                b.invoiceText,
                 displayDate(b.date),
                 b.customer,
                 b.phone,

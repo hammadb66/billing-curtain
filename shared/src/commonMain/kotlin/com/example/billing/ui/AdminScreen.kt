@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -84,6 +85,7 @@ fun AdminScreen(
     var devicesFor by remember { mutableStateOf<String?>(null) }
     var editFor by remember { mutableStateOf<String?>(null) }
     var deleteShopFor by remember { mutableStateOf<String?>(null) }
+    var deleteShopBills by remember { mutableStateOf(false) }
 
     suspend fun loadUsers() { users = services.auth.listUsers() }
     suspend fun loadThisShop() { thisShop = services.settings.get(SettingKeys.SHOP_ID) }
@@ -134,6 +136,9 @@ fun AdminScreen(
                     )
                     OutlinedButton(onClick = { showChangeShop = true }) { Text("Change Shop Code") }
                 }
+
+                // ---- Online / Offline sync switch ----
+                SyncPanel(services)
 
                 // ---- Shops (Firebase) ----
                 Panel("Shops (Firebase license ON / OFF)") {
@@ -267,14 +272,14 @@ fun AdminScreen(
         FormDialog(
             title = "New Shop",
             labels = listOf(
-                "Shop Code (leave blank to generate automatically)",
+                "Shop Code (leave blank = long random code; safest)",
                 "Shop Name",
                 "Max laptops (Blank = ${AppConfig.DEFAULT_MAX_DEVICES})",
             ),
             secret = listOf(false, false, false),
             confirmText = "Create",
             onSubmit = { v ->
-                val id = v[0].trim().ifBlank { "shop_" + randomSaltHex().take(10) }
+                val id = v[0].trim().ifBlank { "shop_" + randomSaltHex().take(20) }
                 val max = v[2].trim().ifBlank { AppConfig.DEFAULT_MAX_DEVICES.toString() }.toIntOrNull()
                 if (!isValidShopId(id)) {
                     "Shop code must be 3 to 40 characters long: only a-z, A-Z, 0-9, _, or -"
@@ -300,7 +305,15 @@ fun AdminScreen(
             confirmText = "Save",
             onSubmit = { v ->
                 val problem = services.license.activate(v[0])
-                if (problem == null) loadThisShop()
+                if (problem == null) {
+                    loadThisShop()
+                    // Online sync chal raha tha to band (purane shop ka data naye shop me na mile)
+                    if (services.sync.handleShopChange()) {
+                        scope.launch {
+                            snackbar.showSnackbar("Shop code badal gaya, isliye Online Sync band kar diya. Zaroorat ho to dobara ON karein.")
+                        }
+                    }
+                }
                 problem
             },
             onDismiss = { showChangeShop = false },
@@ -329,19 +342,43 @@ fun AdminScreen(
     }
 
     deleteShopFor?.let { id ->
-        ConfirmDialog(
-            title = "Shop delete",
-            message = "'$id' And the records from all his laptops will be deleted forever. " +
-                "All the laptops from this shop will be close. Sure?",
-            confirmText = "Delete",
-            onConfirm = {
-                scope.launch {
-                    val problem = services.firebase.deleteShop(session.idToken, id)
-                    if (problem == null) loadShops() else snackbar.showSnackbar(problem)
+        AlertDialog(
+            onDismissRequest = { deleteShopFor = null; deleteShopBills = false },
+            title = { Text("Shop delete") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "'$id' and the records of all its laptops will be deleted. " +
+                            "All the laptops of this shop will be closed. Sure?"
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = deleteShopBills, onCheckedChange = { deleteShopBills = it })
+                        Text(
+                            "Also delete this shop's online bills forever",
+                            color = if (deleteShopBills) Color.Red else Color.DarkGray,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    Text(
+                        if (deleteShopBills) "Bills will be erased from Firebase. This cannot be undone."
+                        else "Bills stay safe in Firebase (only you can see them), in case the customer asks for the data later.",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                    )
                 }
-                deleteShopFor = null
             },
-            onDismiss = { deleteShopFor = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    val withBills = deleteShopBills
+                    scope.launch {
+                        val problem = services.firebase.deleteShop(session.idToken, id, deleteBills = withBills)
+                        if (problem == null) loadShops() else snackbar.showSnackbar(problem)
+                    }
+                    deleteShopFor = null
+                    deleteShopBills = false
+                }) { Text("Delete", color = Color.Red) }
+            },
+            dismissButton = { TextButton(onClick = { deleteShopFor = null; deleteShopBills = false }) { Text("Cancel") } },
         )
     }
 
