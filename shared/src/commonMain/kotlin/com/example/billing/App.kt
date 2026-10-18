@@ -20,6 +20,7 @@ import com.example.billing.auth.DevSession
 import com.example.billing.auth.LicenseState
 import com.example.billing.model.Bill
 import com.example.billing.model.BillingFormState
+import com.example.billing.model.MasterItem
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.sync.SyncStatus
 import com.example.billing.ui.ActivationScreen
@@ -31,7 +32,9 @@ import com.example.billing.ui.CheckingScreen
 import com.example.billing.ui.EditBillScreen
 import com.example.billing.ui.FileImporter
 import com.example.billing.ui.HistoryScreen
+import com.example.billing.ui.ItemReportScreen
 import com.example.billing.ui.LoginScreen
+import com.example.billing.ui.ManageItemsScreen
 import com.example.billing.utils.Branding
 import com.example.billing.utils.FileExporter
 import kotlinx.coroutines.delay
@@ -41,6 +44,8 @@ import kotlinx.coroutines.launch
 sealed interface Screen {
     data object Billing : Screen
     data object History : Screen
+    data object ManageItems : Screen
+    data object ItemReport : Screen
     data class Edit(val bill: Bill) : Screen
 }
 
@@ -76,7 +81,10 @@ fun App(
         var offline by remember { mutableStateOf(false) }
         // true = license theek hai: tab online sync ka background loop chalta hai
         var licensed by remember { mutableStateOf(false) }
-
+        var masterItemsList by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
+        LaunchedEffect(Unit) {
+            masterItemsList = services.settings.getMasterItems()
+        }
         suspend fun runLicenseCheck() {
             gate = Gate.Checking
             // Pehli dafa aur shop.code file maujood ho to chup chap activate (error aaye to Activation screen)
@@ -160,7 +168,7 @@ fun App(
                     )
 
                     is Gate.LoggedIn -> when (val current = screen) {
-                        Screen.Billing -> BillingScreen(
+                    Screen.Billing -> BillingScreen(
                             form = form,
                             repository = services.bills,
                             printer = printer,
@@ -172,8 +180,25 @@ fun App(
                                 // Developer ho to Admin Panel par wapas, warna login par
                                 gate = if (dev != null) Gate.Admin(dev) else Gate.Login
                             },
+                            onOpenManageItems = { screen = Screen.ManageItems },
+                        onOpenItemReport = { screen = Screen.ItemReport },
                             userName = g.user.username,
                             isDeveloper = g.dev != null,
+                            masterItems = masterItemsList
+                        )
+                        Screen.ItemReport -> ItemReportScreen( // <--- YEH NAYA
+                            repository = services.bills,
+                            masterItems = masterItemsList,
+                            onBack = { screen = Screen.Billing }
+                        )
+                        Screen.ManageItems -> ManageItemsScreen(
+                            repository = services.bills, // <--- YEH NAYA ADD KAREIN
+                            getItems = { services.settings.getMasterItems() },
+                            saveItems = {
+                                services.settings.saveMasterItems(it)
+                                masterItemsList = it
+                            },
+                            onBack = { screen = Screen.Billing }
                         )
                         Screen.History -> HistoryScreen(
                             repository = services.bills,
@@ -193,6 +218,7 @@ fun App(
                         is Screen.Edit -> EditBillScreen(
                             bill = current.bill,
                             repository = services.bills,
+                            masterItems = masterItemsList,
                             onClose = { screen = Screen.History },
                         )
                     }

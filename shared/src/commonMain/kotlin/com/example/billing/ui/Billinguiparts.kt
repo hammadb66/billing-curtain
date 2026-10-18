@@ -10,19 +10,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,7 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.billing.data.masterItems
+import com.example.billing.model.MasterItem
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.sanitizeDecimal
 
@@ -40,13 +31,6 @@ internal val ExtraColor = Color(0xFF1565C0)
 internal val PaidColor = Color(0xFF2E7D32)
 internal val DueColor = Color(0xFFE65100)
 
-/**
- * Subtotal / Discount / Extra / Grand Total (+ Received / Pending) ka hisaab.
- * Billing, Edit aur History teeno yehi use karti hain.
- *
- * grandTotal = null  -> Grand Total aur Received/Pending wali lines nahi dikhengi
- * received = null    -> "poora mila" (Pending wali lines nahi dikhengi)
- */
 @Composable
 fun AmountBreakdown(
     subtotal: Double,
@@ -83,22 +67,11 @@ private fun AmountLine(label: String, value: String, color: Color = Color(0xFF47
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            label,
-            fontSize = 13.sp,
-            fontWeight = if (big) FontWeight.Bold else FontWeight.Medium,
-            color = if (big) Color.Gray else color,
-        )
-        Text(
-            value,
-            fontSize = if (big) 19.sp else 14.sp,
-            fontWeight = if (big) FontWeight.Black else FontWeight.SemiBold,
-            color = color,
-        )
+        Text(label, fontSize = 13.sp, fontWeight = if (big) FontWeight.Bold else FontWeight.Medium, color = if (big) Color.Gray else color)
+        Text(value, fontSize = if (big) 19.sp else 14.sp, fontWeight = if (big) FontWeight.Black else FontWeight.SemiBold, color = color)
     }
 }
 
-/** Billing screen ke liye: "Received Rs X  |  Pending Rs Y" ki narangi patti. */
 @Composable
 fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifier) {
     Surface(color = DueColor.copy(alpha = 0.10f), shape = RoundedCornerShape(10.dp), modifier = modifier.fillMaxWidth()) {
@@ -113,21 +86,13 @@ fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifi
     }
 }
 
-/** Chhota rangeen label, jaise "Discount - Rs 500". */
 @Composable
 fun AmountTag(text: String, color: Color) {
     Surface(color = color.copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
-        Text(
-            text,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = color,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
+        Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 
-/** Discount ka text field jis me "Rs" / "%" ka button hai (tap karke badlein). */
 @Composable
 fun DiscountInput(
     value: String,
@@ -146,11 +111,7 @@ fun DiscountInput(
         },
         label = { Text(if (isPercent) "Discount (%)" else "Discount (Rs)") },
         trailingIcon = {
-            TextButton(
-                onClick = { onModeChange(!isPercent) },
-                enabled = enabled,
-                contentPadding = PaddingValues(horizontal = 8.dp),
-            ) {
+            TextButton(onClick = { onModeChange(!isPercent) }, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp)) {
                 Text(if (isPercent) "%" else "Rs", fontWeight = FontWeight.Bold)
             }
         },
@@ -163,12 +124,7 @@ fun DiscountInput(
     )
 }
 
-/**
- * Ek item ka card (Billing aur Edit dono me). Do line:
- *   1) item ka naam + "+ Same item" (usi item ko dobara, alag rate ke liye) + delete
- *   2) Qty | Rate | Total
- * occurrence > 1 ho to naam ke saath (2), (3) likha aata hai.
- */
+// YAHAN UNIT ADD KIYA HAI
 @Composable
 fun ItemEntryCard(
     name: String,
@@ -179,6 +135,7 @@ fun ItemEntryCard(
     onRateChange: (String) -> Unit,
     total: Double,
     isIncomplete: Boolean,
+    unit: String = "", // <--- YEH NAYA HAI
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -190,18 +147,8 @@ fun ItemEntryCard(
     ) {
         Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (occurrence > 1) "$name ($occurrence)" else name,
-                    Modifier.weight(1f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                )
-                TextButton(
-                    onClick = onDuplicate,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.height(34.dp),
-                ) {
+                Text(if (occurrence > 1) "$name ($occurrence)" else name, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(34.dp)) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = AppGreen, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(2.dp))
                     Text("Same item", fontSize = 11.sp, color = AppGreen, fontWeight = FontWeight.Bold)
@@ -210,13 +157,10 @@ fun ItemEntryCard(
                     Icon(Icons.Default.Delete, contentDescription = "Remove item", tint = Color.Red, modifier = Modifier.size(16.dp))
                 }
             }
-            Row(
-                Modifier.padding(end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
+            Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
-                    Text("Qty", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    // Yahan Label badla hai
+                    Text(if (unit.isNotBlank()) "Qty ($unit)" else "Qty", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     CompactNumberField(qty, onQtyChange, Modifier.fillMaxWidth())
                 }
                 Column(Modifier.weight(1f)) {
@@ -225,61 +169,83 @@ fun ItemEntryCard(
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Text("Total", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                    Text(
-                        formatMoney(total),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AppGreen,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
+                    Text(formatMoney(total), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppGreen, textAlign = TextAlign.End, modifier = Modifier.padding(bottom = 8.dp))
                 }
             }
         }
     }
 }
 
-/** Item chunne ka dialog (search ke saath). Same item kitni bhi dafa add ho sakta hai. */
+
 @Composable
-fun AddItemDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+fun AddItemDialog(
+    masterItems: List<MasterItem>,
+    onPick: (MasterItem) -> Unit,
+    onManageItems: () -> Unit,
+    onDismiss: () -> Unit
+) {
     var query by remember { mutableStateOf("") }
-    val list = remember(query) { masterItems.filter { query.isBlank() || it.contains(query, ignoreCase = true) } }
+    val list = remember(query, masterItems) {
+        masterItems.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Item") },
+        title = { Text("Select Item", fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     placeholder = { Text("Search item...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen)
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Tip: the same item can be added again with a different rate.",
-                    fontSize = 11.sp,
-                    color = Color.Gray,
-                )
-                Spacer(Modifier.height(6.dp))
-                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                Spacer(Modifier.height(12.dp))
+
+                Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
                     if (list.isEmpty()) {
                         Text("No item found", color = Color.Gray, modifier = Modifier.padding(vertical = 12.dp))
                     }
-                    list.forEach { name ->
-                        Text(
-                            name,
-                            modifier = Modifier.fillMaxWidth().clickable { onPick(name) }.padding(vertical = 12.dp),
-                            fontSize = 14.sp,
-                        )
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
+                    list.forEach { item ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onPick(item) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFF8FAFC)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                                Surface(
+                                    color = AppGreen.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        item.unit,
+                                        fontSize = 11.sp,
+                                        color = AppGreen,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(onClick = onManageItems) {
+                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Manage Items", color = AppGreen, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

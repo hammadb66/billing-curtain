@@ -45,7 +45,7 @@ fun buildInvoiceRows(
             roomTotal += item.total
             rows += PdfRow(
                 left = item.name,
-                qty = formatQty(item.qtyValue),
+                qty = "${formatQty(item.qtyValue)} ${item.unit}",
                 rate = formatMoney(item.rateValue),
                 right = formatMoney(item.total),
             )

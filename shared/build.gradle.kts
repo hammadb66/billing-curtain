@@ -61,6 +61,8 @@ kotlin {
             implementation("app.cash.sqldelight:runtime:2.0.2")
             implementation("app.cash.sqldelight:coroutines-extensions:2.0.2")
 
+
+            implementation("androidx.compose.material:material-icons-extended:1.6.0")
         }
         jvmMain.dependencies {
             implementation("app.cash.sqldelight:sqlite-driver:2.0.2")

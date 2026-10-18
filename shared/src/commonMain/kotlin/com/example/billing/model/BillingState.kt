@@ -9,7 +9,7 @@ import com.example.billing.utils.resolveDiscount
 private var idCounter = 0L
 private fun nextId(): Long = idCounter++
 
-class ItemState(val name: String) {
+class ItemState(val name: String, var unit: String = "") {
     var qty by mutableStateOf("")
     var rate by mutableStateOf("")
     val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
@@ -25,14 +25,15 @@ class RoomState {
     val items = mutableStateListOf<ItemState>()
     val total: Double get() = items.sumOf { it.total }
 
-    fun addItem(name: String) {
-        items.add(ItemState(name))
+    fun addItem(name: String, unit: String = "") { // <--- YEH UPDATE KAREIN
+        items.add(ItemState(name, unit))
     }
 
     /** Wohi item us ke neeche dobara (alag rate ke liye). */
     fun duplicateItem(item: ItemState) {
         val i = items.indexOf(item)
-        if (i >= 0) items.add(i + 1, ItemState(item.name)) else items.add(ItemState(item.name))
+        val copy = ItemState(item.name, item.unit) // <--- Yahan item.unit pass karein
+        if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
 
     fun removeItem(item: ItemState) {

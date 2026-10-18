@@ -11,6 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlin.collections.iterator
+import kotlin.compareTo
+import kotlin.io.iterator
+import kotlin.text.iterator
 import kotlin.time.Clock
 
 /** Phone number se mila purana customer: naam + us ka purana baqaya. */
@@ -420,4 +424,97 @@ class BillRepository(database: BillingDatabase) {
         }
         MergeResult(changed, overwritten)
     }
+
+    /** Jab master item ka naam ya unit change ho, to purane bills mein bhi update karo */
+    suspend fun updateItemInBills(oldName: String, newName: String, newUnit: String) {
+        withContext(Dispatchers.Default) {
+            val allBills = queries.selectAll(this@BillRepository::toBill).executeAsList()
+            var changedCount = 0
+
+            queries.transaction {
+                for (bill in allBills) {
+                    var billChanged = false
+                    val updatedRooms = bill.rooms.map { room ->
+                        val updatedItems = room.items.map { item ->
+                            if (item.name.equals(oldName, ignoreCase = true)) {
+                                billChanged = true
+                                item.copy(name = newName, unit = newUnit) // Naam aur unit update
+                            } else item
+                        }
+                        room.copy(items = updatedItems)
+                    }
+
+                    if (billChanged) {
+                        queries.updateBill(
+                            bill.customer, bill.phone,
+                            json.encodeToString(roomsSerializer, updatedRooms),
+                            bill.discount, bill.extraCharges, bill.paidAmount, bill.id
+                        )
+                        syncQ.markDirty(now(), bill.id) // Sync ke liye nishan lagaya
+                        changedCount++
+                    }
+                }
+            }
+            if (changedCount > 0) onChanged?.invoke()
+        }
+    }
+
+    /** Check karta hai ke yeh item kisi bhi bill mein use hua hai ya nahi */
+    suspend fun isItemUsedInAnyBill(itemName: String): Boolean = withContext(Dispatchers.Default) {
+        val allBills = queries.selectAll(this@BillRepository::toBill).executeAsList()
+        allBills.any { bill ->
+            bill.rooms.any { room ->
+                room.items.any { it.name.equals(itemName, ignoreCase = true) }
+            }
+        }
+    }
+
+    /** Item Report ke liye data nikalta hai */
+    suspend fun getItemReport(fromDate: String, toDate: String, filterItemName: String?): List<ItemReportRow> = withContext(Dispatchers.Default) {
+        val allBills = queries.selectAll(this@BillRepository::toBill).executeAsList()
+        val result = mutableListOf<ItemReportRow>()
+
+        // Date filter (YYYY-MM-DD format mein compare hoga)
+        val filteredBills = allBills.filter { it.date.take(10) in fromDate..toDate }
+
+        for (bill in filteredBills) {
+            for (room in bill.rooms) {
+                for (item in room.items) {
+                    if (filterItemName == null || item.name.equals(filterItemName, ignoreCase = true)) {
+                        if (item.qtyValue > 0.0) {
+                            result.add(
+                                ItemReportRow(
+                                    date = bill.date.take(10),
+                                    billId = bill.invoiceText,
+                                    customer = bill.customer,
+                                    itemName = item.name,
+                                    unit = item.unit,
+                                    qty = item.qtyValue,
+                                    rate = item.rateValue,
+                                    total = item.total
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        result.sortedByDescending { it.date }
+    }
+
+
 }
+
+
+
+// BillRepository.kt ke bilkul end mein (class ke bahar)
+data class ItemReportRow(
+    val date: String,
+    val billId: String,
+    val customer: String,
+    val itemName: String,
+    val unit: String,
+    val qty: Double,
+    val rate: Double,
+    val total: Double
+)

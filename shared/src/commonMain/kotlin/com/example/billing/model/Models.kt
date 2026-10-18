@@ -7,11 +7,19 @@ data class ItemData(
     val name: String,
     val qty: String = "",
     val rate: String = "",
+    val unit: String = "",
 ) {
     val qtyValue: Double get() = qty.toDoubleOrNull() ?: 0.0
     val rateValue: Double get() = rate.toDoubleOrNull() ?: 0.0
     val total: Double get() = qtyValue * rateValue
 }
+
+
+@Serializable
+data class MasterItem(
+    val name: String,
+    val unit: String = "pcs"
+)
 
 /** Ek room (Bedroom, Lounge...) aur us ke items. */
 @Serializable

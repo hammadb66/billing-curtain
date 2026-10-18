@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.billing.data.BillRepository
 import com.example.billing.model.Bill
 import com.example.billing.model.ItemData
+import com.example.billing.model.MasterItem
 import com.example.billing.model.RoomData
 import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.formatMoney
@@ -38,7 +39,7 @@ import kotlinx.coroutines.launch
 
 private var editIdCounter = 0L
 
-private class EditItem(val name: String, initialQty: String, initialRate: String) {
+private class EditItem(val name: String, initialQty: String, initialRate: String ,val unit: String) {
     var qty by mutableStateOf(initialQty)
     var rate by mutableStateOf(initialRate)
     val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
@@ -54,7 +55,7 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
     /** Wohi item us ke neeche dobara (alag rate ke liye). */
     fun duplicate(item: EditItem) {
         val i = items.indexOf(item)
-        val copy = EditItem(item.name, "", "")
+        val copy = EditItem(item.name, "", "", item.unit)
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
 }
@@ -64,6 +65,7 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
 fun EditBillScreen(
     bill: Bill,
     repository: BillRepository,
+    masterItems: List<MasterItem>,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -85,7 +87,7 @@ fun EditBillScreen(
     val rooms = remember {
         mutableStateListOf<EditRoom>().apply {
             bill.rooms.forEach { r ->
-                add(EditRoom(r.roomName, r.items.map { EditItem(it.name, it.qty, it.rate) }))
+                add(EditRoom(r.roomName, r.items.map { EditItem(it.name, it.qty, it.rate, it.unit) }))
             }
         }
     }
@@ -126,16 +128,14 @@ fun EditBillScreen(
             return
         }
 
-        val finalRooms = rooms
-            .map { room ->
-                RoomData(
-                    roomName = room.name.trim(),
-                    items = room.items
-                        .filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
-                        .map { ItemData(it.name, it.qty, it.rate) },
-                )
-            }
-            .filter { it.items.isNotEmpty() }
+        val finalRooms = rooms.map { room ->
+            RoomData(
+                roomName = room.name.trim(),
+                items = room.items
+                    .filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
+                    .map { ItemData(it.name, it.qty, it.rate, it.unit) }, // <--- it.unit YAHAN ADD KAREIN
+            )
+        }.filter { it.items.isNotEmpty() }
 
         scope.launch {
             isSaving = true
@@ -317,7 +317,12 @@ fun EditBillScreen(
 
     addItemFor?.let { room ->
         AddItemDialog(
-            onPick = { name -> room.items.add(EditItem(name, "", "")); isDirty = true; addItemFor = null },
+            masterItems = masterItems, // <--- YEH ADD KAREIN
+            onPick = { item ->
+                room.items.add(EditItem(item.name, "", "", item.unit)) // <--- item.unit pass karein
+                isDirty = true; addItemFor = null
+            },
+            onManageItems = { addItemFor = null }, // Edit screen se manage items open nahi kar rahe
             onDismiss = { addItemFor = null },
         )
     }
@@ -405,6 +410,7 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
                             onRateChange = { item.rate = it; onChanged() },
                             total = item.total,
                             isIncomplete = item.isIncomplete,
+                            unit = item.unit,
                             onDuplicate = { room.duplicate(item); onChanged() },
                             onDelete = { room.items.remove(item); onChanged() },
                         )

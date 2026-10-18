@@ -38,10 +38,12 @@ import com.example.billing.data.BillRepository
 import com.example.billing.data.masterItems
 import com.example.billing.model.BillingFormState
 import com.example.billing.model.ItemState
+import com.example.billing.model.MasterItem
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
 import com.example.billing.utils.Branding
+import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.displayDate
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.nowIso
@@ -49,6 +51,7 @@ import com.example.billing.utils.sanitizeDecimal
 import com.example.billing.utils.sanitizePhone
 import com.example.billing.utils.toInputString
 import kotlinx.coroutines.launch
+import kotlin.system.exitProcess
 
 @Composable
 fun BillingScreen(
@@ -57,8 +60,11 @@ fun BillingScreen(
     printer: PdfPrinter,
     onOpenHistory: () -> Unit,
     onLogout: () -> Unit,
+    onOpenManageItems: () -> Unit,
+    onOpenItemReport: () -> Unit,
     userName: String,
     isDeveloper: Boolean,
+    masterItems: List<MasterItem>
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -68,7 +74,11 @@ fun BillingScreen(
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var previousBalance by remember { mutableStateOf(0.0) }
-
+    var masterItemsList by remember { mutableStateOf(masterItems) }
+    var showExitConfirm by remember { mutableStateOf(false) }
+    PlatformBackHandler {
+            showExitConfirm = true
+    }
     LaunchedEffect(form.phone) {
         if (form.phone.length >= 7) {
             val info = runCatching { repository.getCustomerInfo(form.phone) }.getOrNull()
@@ -79,13 +89,31 @@ fun BillingScreen(
         }
     }
 
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("Exit App?", fontWeight = FontWeight.Bold) },
+            text = { Text("Do you really want to exit the billing system?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitConfirm = false
+                 exitProcess(0)
+                }) { Text("Exit", color = Color.Red, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
     val filledItems by remember { derivedStateOf { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } } }
     val summary = "${form.rooms.size} Room(s) | $filledItems Item(s)"
 
     fun printAndSave() {
         if (isPrinting) return
         val problem = validateForm(form)
-        if (problem != null) { message = problem; return }
+        if (problem != null) {
+            message = problem; return
+        }
 
         scope.launch {
             isPrinting = true
@@ -107,7 +135,16 @@ fun BillingScreen(
                 try {
                     val printed = printer.print(
                         title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
-                        rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid),
+                        rows = buildInvoiceRows(
+                            customer,
+                            phone,
+                            displayDate(iso),
+                            rooms,
+                            discVal,
+                            extraVal,
+                            invoiceNo = invoiceNo,
+                            paidAmount = paid
+                        ),
                     )
                     snackText = if (printed) "Bill printed and saved successfully" else "Bill saved. Print cancelled."
                 } catch (e: Throwable) {
@@ -132,18 +169,24 @@ fun BillingScreen(
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     Column(
-                        Modifier
-                            .width(380.dp)
-                            .fillMaxHeight()
-                            .background(Color.White)
-                            .verticalScroll(rememberScrollState())
-                            .padding(20.dp),
+                        Modifier.width(380.dp).fillMaxHeight().background(Color.White)
+                            .verticalScroll(rememberScrollState()).padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text("Billing System", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = AppGreen)
                         Text("by ${Branding.COMPANY}", fontSize = 16.sp, color = Color.Gray)
 
-                        HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting, previousBalance = previousBalance)
+                        HeaderBlock(
+                            form = form,
+                            onOpenHistory = onOpenHistory,
+                            onOpenItemReport = onOpenItemReport,
+                            onOpenManageItems = onOpenManageItems,
+                            onLogout = onLogout,
+                            userName = userName,
+                            isDeveloper = isDeveloper,
+                            enabled = !isPrinting,
+                            previousBalance = previousBalance
+                        )
                         HorizontalDivider(color = Color(0xFFEEEEEE))
 
                         FinancialAdjustmentsBlock(form, enabled = !isPrinting)
@@ -175,16 +218,41 @@ fun BillingScreen(
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        item { Text("Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen) }
-                        item { Text("by ${Branding.COMPANY}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen) }
-                        item { HeaderBlock(form, onOpenHistory, onLogout, userName, isDeveloper, enabled = !isPrinting, previousBalance = previousBalance) }
+                        item {
+                            Text(
+                                "Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen
+                            )
+                        }
+                        item {
+                            Text(
+                                "by ${Branding.COMPANY}",
+                                fontSize = 16.sp, color = Color.Gray
+                            )
+                        }
+                        item {
+                            HeaderBlock(
+                                form = form,
+                                onOpenHistory = onOpenHistory,
+                                onOpenItemReport = onOpenItemReport,
+                                onOpenManageItems = onOpenManageItems,
+                                onLogout = onLogout,
+                                userName = userName,
+                                isDeveloper = isDeveloper,
+                                enabled = !isPrinting,
+                                previousBalance = previousBalance
+                            )
+                        }
                         item { FinancialAdjustmentsBlock(form, enabled = !isPrinting) }
                         roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
                         Column(Modifier.padding(12.dp)) {
-                            AmountBreakdown(form.subtotal, form.discountValue, form.extraValue, Modifier.padding(bottom = 6.dp))
-                            if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance, Modifier.padding(bottom = 6.dp))
+                            AmountBreakdown(
+                                form.subtotal, form.discountValue, form.extraValue, Modifier.padding(bottom = 6.dp)
+                            )
+                            if (form.balance > 0.005) BalanceBanner(
+                                form.receivedValue, form.balance, Modifier.padding(bottom = 6.dp)
+                            )
                             ActionBlock(
                                 total = form.grandTotal,
                                 summary = summary,
@@ -199,8 +267,14 @@ fun BillingScreen(
             }
 
             if (isPrinting) {
-                Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
-                    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Dialog(
+                    onDismissRequest = {},
+                    properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                    ) {
                         Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator(color = AppGreen)
                             Spacer(modifier = Modifier.height(16.dp))
@@ -214,17 +288,35 @@ fun BillingScreen(
 
     addItemForRoom?.let { room ->
         AddItemDialog(
-            onPick = { name -> room.addItem(name); addItemForRoom = null },
+            masterItems = masterItemsList,
+            onPick = { item ->
+                room.addItem(item.name, item.unit)
+                addItemForRoom = null
+            },
+            onManageItems = {         // <--- YEH ADD KAREIN
+                addItemForRoom = null
+                onOpenManageItems()
+            },
             onDismiss = { addItemForRoom = null },
         )
     }
 
     message?.let { (title, text) -> MessageDialog(title, text) { message = null } }
     roomToDelete?.let { room ->
-        ConfirmDialog("Delete Room", "Are you sure you want to delete this room?", "Confirm", { form.removeRoom(room); roomToDelete = null }, { roomToDelete = null })
+        ConfirmDialog(
+            "Delete Room",
+            "Are you sure you want to delete this room?",
+            "Confirm",
+            { form.removeRoom(room); roomToDelete = null },
+            { roomToDelete = null })
     }
     if (confirmReset) {
-        ConfirmDialog("Reset", "Do you want to clear all the fields?", "Reset", { form.reset(); confirmReset = false }, { confirmReset = false })
+        ConfirmDialog(
+            "Reset",
+            "Do you want to clear all the fields?",
+            "Reset",
+            { form.reset(); confirmReset = false },
+            { confirmReset = false })
     }
 }
 
@@ -275,9 +367,7 @@ private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) 
 }
 
 private fun LazyListScope.roomItems(
-    form: BillingFormState,
-    onAddItem: (RoomState) -> Unit,
-    onDelete: (RoomState) -> Unit
+    form: BillingFormState, onAddItem: (RoomState) -> Unit, onDelete: (RoomState) -> Unit
 ) {
     itemsIndexed(items = form.rooms, key = { _, room -> room.id }) { index, room ->
         RoomCard(index, room, onAddItem = { onAddItem(room) }, onDelete = onDelete)
@@ -288,6 +378,8 @@ private fun LazyListScope.roomItems(
 private fun HeaderBlock(
     form: BillingFormState,
     onOpenHistory: () -> Unit,
+    onOpenItemReport: () -> Unit,
+    onOpenManageItems: () -> Unit,
     onLogout: () -> Unit,
     userName: String,
     isDeveloper: Boolean,
@@ -305,6 +397,7 @@ private fun HeaderBlock(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
+
         OutlinedTextField(
             value = form.phone,
             onValueChange = { form.phone = sanitizePhone(it) },
@@ -325,15 +418,31 @@ private fun HeaderBlock(
                 fontSize = 12.sp,
             )
         }
-        Button(onClick = { form.addRoom() }, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = { form.addRoom() },
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text("Add New Room", fontWeight = FontWeight.Bold)
         }
-        OutlinedButton(onClick = onOpenHistory, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onOpenHistory,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("History & Invoices", fontWeight = FontWeight.Bold)
         }
 
+        OutlinedButton(onClick = onOpenItemReport, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Item Usage Report", fontWeight = FontWeight.Bold, color = AppGreen)
+        }
+        OutlinedButton(onClick = onOpenManageItems, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Add New Items", fontWeight = FontWeight.Bold, color = AppGreen)
+        }
         HorizontalDivider(color = Color(0xFFEEEEEE))
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -363,24 +472,45 @@ private fun HeaderBlock(
 }
 
 @Composable
-private fun ActionBlock(total: Double, summary: String, compact: Boolean, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit) {
+private fun ActionBlock(
+    total: Double, summary: String, compact: Boolean, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit
+) {
     if (compact) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Column(Modifier.weight(1f)) {
                 Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                 Text("Rs ${formatMoney(total)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(summary, fontSize = 9.sp, color = Color.Gray)
             }
             TextButton(onClick = onReset, enabled = enabled) { Text("Reset", color = Color.Red) }
-            Button(onClick = onPrint, enabled = enabled, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))) {
+            Button(
+                onClick = onPrint,
+                enabled = enabled,
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))
+            ) {
                 Text("PRINT", fontWeight = FontWeight.Bold)
             }
         }
     } else {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             TotalCard(total)
             Text(summary, fontSize = 12.sp, color = Color.Gray)
-            Button(onClick = onPrint, enabled = enabled, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))) {
+            Button(
+                onClick = onPrint,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))
+            ) {
                 Text("PRINT & SAVE BILL", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
             TextButton(onClick = onReset, enabled = enabled) { Text("Reset All Fields", color = Color.Red) }
@@ -390,10 +520,7 @@ private fun ActionBlock(total: Double, summary: String, compact: Boolean, enable
 
 @Composable
 private fun RoomCard(
-    index: Int,
-    room: RoomState,
-    onAddItem: () -> Unit,
-    onDelete: (RoomState) -> Unit
+    index: Int, room: RoomState, onAddItem: () -> Unit, onDelete: (RoomState) -> Unit
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -407,11 +534,21 @@ private fun RoomCard(
             ) {
                 if (index == 0) {
                     Box(Modifier.size(36.dp).background(AppGreen, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Home, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Home,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 } else {
                     IconButton(onClick = { onDelete(room) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete room", tint = Color.Red, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete room",
+                            tint = Color.Red,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
                 Spacer(Modifier.width(8.dp))
@@ -419,13 +556,24 @@ private fun RoomCard(
                     value = room.name,
                     onValueChange = { room.name = it },
                     singleLine = true,
-                    textStyle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface),
+                    textStyle = TextStyle(
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.weight(1f),
-                    decorationBox = { inner -> Box { if (room.name.isEmpty()) Text("Room Name", fontSize = 16.sp, color = Color.Gray); inner() } },
+                    decorationBox = { inner ->
+                        Box {
+                            if (room.name.isEmpty()) Text(
+                                "Room Name", fontSize = 16.sp, color = Color.Gray
+                            ); inner()
+                        }
+                    },
                 )
                 Text("Rs ${formatMoney(room.total)}", color = AppGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 IconButton(onClick = { room.expanded = !room.expanded }) {
-                    Icon(if (room.expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = "Expand")
+                    Icon(
+                        if (room.expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Expand"
+                    )
                 }
             }
 
@@ -453,8 +601,9 @@ private fun RoomCard(
                                         onRateChange = { item.rate = it },
                                         total = item.total,
                                         isIncomplete = item.isIncomplete,
-                                        onDuplicate = { room.duplicateItem(item) },
-                                        onDelete = { room.removeItem(item) },
+                                        unit = item.unit,
+                                    onDuplicate = { room.duplicateItem(item) },
+                                    onDelete = { room.removeItem(item) },
                                     )
                                 }
                             }
@@ -462,7 +611,12 @@ private fun RoomCard(
                     }
 
                     TextButton(onClick = onAddItem) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = AppGreen, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = AppGreen,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(Modifier.width(6.dp))
                         Text("Add item", color = AppGreen, fontWeight = FontWeight.Bold)
                     }
