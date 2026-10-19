@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.billing.AppServices
 import com.example.billing.data.BillRepository
 import com.example.billing.data.masterItems
 import com.example.billing.model.BillingFormState
@@ -42,6 +43,7 @@ import com.example.billing.model.MasterItem
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
+import com.example.billing.presentation.BillingViewModel
 import com.example.billing.utils.Branding
 import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.displayDate
@@ -51,20 +53,19 @@ import com.example.billing.utils.sanitizeDecimal
 import com.example.billing.utils.sanitizePhone
 import com.example.billing.utils.toInputString
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import kotlin.system.exitProcess
 
 @Composable
 fun BillingScreen(
-    form: BillingFormState,
-    repository: BillRepository,
     printer: PdfPrinter,
     onOpenHistory: () -> Unit,
     onLogout: () -> Unit,
     onOpenManageItems: () -> Unit,
     onOpenItemReport: () -> Unit,
     userName: String,
-    isDeveloper: Boolean,
-    masterItems: List<MasterItem>
+    isDeveloper: Boolean
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -73,21 +74,28 @@ fun BillingScreen(
     var addItemForRoom by remember { mutableStateOf<RoomState?>(null) }
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
-    var previousBalance by remember { mutableStateOf(0.0) }
-    var masterItemsList by remember { mutableStateOf(masterItems) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    PlatformBackHandler {
-            showExitConfirm = true
-    }
+    // Koin injects
+    val viewModel: BillingViewModel = koinViewModel()
+    val services = koinInject<AppServices>()
+
+    // ViewModel se state
+    val form = viewModel.form
+    val masterItems by viewModel.masterItems.collectAsState()
+    val previousBalance by viewModel.previousBalance.collectAsState()
+
+    // Duplicate LaunchedEffect hata dein, sirf ye rakhein:
     LaunchedEffect(form.phone) {
-        if (form.phone.length >= 7) {
-            val info = runCatching { repository.getCustomerInfo(form.phone) }.getOrNull()
-            previousBalance = info?.previousBalance ?: 0.0
-            if (info != null && form.customer.isBlank()) form.customer = info.name
-        } else {
-            previousBalance = 0.0
-        }
+        viewModel.loadCustomerInfo(form.phone)
     }
+    LaunchedEffect(Unit) {
+        viewModel.reloadMasterItems()
+    }
+
+        PlatformBackHandler {
+        showExitConfirm = true
+    }
+
 
     if (showExitConfirm) {
         AlertDialog(
@@ -97,13 +105,12 @@ fun BillingScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showExitConfirm = false
-                 exitProcess(0)
+                    exitProcess(0)
                 }) { Text("Exit", color = Color.Red, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { showExitConfirm = false }) { Text("Cancel") }
-            }
-        )
+            })
     }
     val filledItems by remember { derivedStateOf { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } } }
     val summary = "${form.rooms.size} Room(s) | $filledItems Item(s)"
@@ -111,52 +118,37 @@ fun BillingScreen(
     fun printAndSave() {
         if (isPrinting) return
         val problem = validateForm(form)
-        if (problem != null) {
-            message = problem; return
-        }
+        if (problem != null) { message = problem; return }
 
-        scope.launch {
-            isPrinting = true
-            var snackText: String? = null
-            try {
-                val customer = form.customer.trim()
-                val phone = form.phone
-                val rooms = form.toRoomDataList()
-                val iso = nowIso()
-
-                val discVal = form.discountValue
-                val extraVal = form.extraValue
-                val paid = form.receivedValue
-
-                // Invoice number login user ke naam se banta hai (hammad-01, hammad-02...)
-                val invoiceNo = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid, userName)
-                form.reset()
-
-                try {
-                    val printed = printer.print(
-                        title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
-                        rows = buildInvoiceRows(
-                            customer,
-                            phone,
-                            displayDate(iso),
-                            rooms,
-                            discVal,
-                            extraVal,
-                            invoiceNo = invoiceNo,
-                            paidAmount = paid
-                        ),
-                    )
-                    snackText = if (printed) "Bill printed and saved successfully" else "Bill saved. Print cancelled."
-                } catch (e: Throwable) {
-                    snackText = "Bill saved, but print failed. Reprint from History."
+        isPrinting = true
+        viewModel.saveBill(
+            userName = userName,
+            // Yahan parameters update kar diye hain (iso add kiya hai)
+            onSuccess = { invoiceNo, customer, phone, iso, rooms, discVal, extraVal, paid ->
+                form.reset() // UI reset
+                scope.launch {
+                    var snackText: String? = null
+                    try {
+                        val printed = printer.print(
+                            title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
+                            rows = buildInvoiceRows(
+                                customer, phone, displayDate(iso),
+                                rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid
+                            )
+                        )
+                        snackText = if (printed) "Bill printed & saved!" else "Bill saved. Print cancelled."
+                    } catch (e: Throwable) {
+                        snackText = "Bill saved, but print failed."
+                    }
+                    isPrinting = false
+                    snackText?.let { snackbar.showSnackbar(it) }
                 }
-            } catch (e: Throwable) {
-                message = "Save Error" to (e.message ?: e.toString())
-            } finally {
+            },
+            onError = { error ->
                 isPrinting = false
+                message = "Save Error" to error
             }
-            snackText?.let { snackbar.showSnackbar(it) }
-        }
+        )
     }
 
     Scaffold(
@@ -225,8 +217,7 @@ fun BillingScreen(
                         }
                         item {
                             Text(
-                                "by ${Branding.COMPANY}",
-                                fontSize = 16.sp, color = Color.Gray
+                                "by ${Branding.COMPANY}", fontSize = 16.sp, color = Color.Gray
                             )
                         }
                         item {
@@ -288,12 +279,12 @@ fun BillingScreen(
 
     addItemForRoom?.let { room ->
         AddItemDialog(
-            masterItems = masterItemsList,
+            masterItems = masterItems,
             onPick = { item ->
                 room.addItem(item.name, item.unit)
                 addItemForRoom = null
             },
-            onManageItems = {         // <--- YEH ADD KAREIN
+            onManageItems = {
                 addItemForRoom = null
                 onOpenManageItems()
             },
@@ -437,10 +428,20 @@ private fun HeaderBlock(
             Text("History & Invoices", fontWeight = FontWeight.Bold)
         }
 
-        OutlinedButton(onClick = onOpenItemReport, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onOpenItemReport,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("Item Usage Report", fontWeight = FontWeight.Bold, color = AppGreen)
         }
-        OutlinedButton(onClick = onOpenManageItems, enabled = enabled, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onOpenManageItems,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("Add New Items", fontWeight = FontWeight.Bold, color = AppGreen)
         }
         HorizontalDivider(color = Color(0xFFEEEEEE))
@@ -602,8 +603,8 @@ private fun RoomCard(
                                         total = item.total,
                                         isIncomplete = item.isIncomplete,
                                         unit = item.unit,
-                                    onDuplicate = { room.duplicateItem(item) },
-                                    onDelete = { room.removeItem(item) },
+                                        onDuplicate = { room.duplicateItem(item) },
+                                        onDelete = { room.removeItem(item) },
                                     )
                                 }
                             }

@@ -63,6 +63,15 @@ kotlin {
 
 
             implementation("androidx.compose.material:material-icons-extended:1.6.0")
+
+
+            //for koin dependency injection
+            implementation(libs.koin.core)
+            implementation(libs.koin.compose)
+            implementation(libs.koin.compose.viewmodel)
+
+            //for compose navigation
+            implementation(libs.navigation.compose)
         }
         jvmMain.dependencies {
             implementation("app.cash.sqldelight:sqlite-driver:2.0.2")

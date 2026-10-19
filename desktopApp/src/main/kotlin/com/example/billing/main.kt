@@ -12,22 +12,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.example.billing.data.BillRepository
 import com.example.billing.data.DriverFactory
+import com.example.billing.di.initKoin
 import com.example.billing.pdf.DesktopPdfPrinter
+import com.example.billing.utils.DesktopFileExporter
+import com.example.billing.utils.DesktopFileImporter
 import java.util.logging.Level
 import java.util.logging.Logger
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.res.useResource
-import com.example.billing.utils.DesktopFileExporter
-import com.example.billing.utils.DesktopFileImporter
 
 private val pdfBoxLoggers =
     listOf("org.apache.pdfbox", "org.apache.fontbox").map { Logger.getLogger(it).apply { level = Level.OFF } }
 
 fun main() = application {
-    val services = remember { createAppServices(DriverFactory(), readDeviceIdentity()) }
+    val device = remember { readDeviceIdentity() }
+    val driverFactory = remember { DriverFactory() } // Desktop me Context ki zaroorat nahi
+
+    // Koin start karein
+    initKoin(driverFactory, device)
 
     val presetShop = remember { readPresetShopCode() }
     val printer = remember { DesktopPdfPrinter() }
@@ -39,17 +43,18 @@ fun main() = application {
     var showExitDialog by remember { mutableStateOf(false) }
 
     Window(
-        onCloseRequest ={
-            showExitDialog = true
-        },
+        onCloseRequest = { showExitDialog = true },
         title = "Billing System",
         icon = icon,
         state = rememberWindowState(width = 1200.dp, height = 800.dp),
     ) {
-        App(services, printer, presetShop, exporter = exporter, exporter_importer = fileImporter)
+        App(
+            printer = printer,
+            presetShopCode = presetShop,
+            exporter = exporter,
+            importer = fileImporter
+        )
 
-
-        // Desktop Exit Confirmation Dialog
         if (showExitDialog) {
             AlertDialog(
                 onDismissRequest = { showExitDialog = false },
@@ -58,7 +63,6 @@ fun main() = application {
                 confirmButton = {
                     TextButton(onClick = {
                         showExitDialog = false
-                        // Desktop App ko safely band karne ka tareeqa
                         exitApplication()
                     }) { Text("Exit", color = Color.Red) }
                 },
@@ -67,6 +71,5 @@ fun main() = application {
                 }
             )
         }
-
     }
 }

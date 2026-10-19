@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.billing.AppServices
 import com.example.billing.data.BillRepository
 import com.example.billing.model.Bill
 import com.example.billing.model.ItemData
@@ -36,6 +37,7 @@ import com.example.billing.utils.sanitizeDecimal
 import com.example.billing.utils.sanitizePhone
 import com.example.billing.utils.toInputString
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 private var editIdCounter = 0L
 
@@ -65,8 +67,7 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
 fun EditBillScreen(
     bill: Bill,
     repository: BillRepository,
-    masterItems: List<MasterItem>,
-    onClose: () -> Unit,
+        onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -83,7 +84,12 @@ fun EditBillScreen(
     var addItemFor by remember { mutableStateOf<EditRoom?>(null) }
     var roomToDelete by remember { mutableStateOf<EditRoom?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    val services = koinInject<AppServices>()
+    var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
 
+    LaunchedEffect(Unit) {
+        masterItems = services.settings.getMasterItems()
+    }
     val rooms = remember {
         mutableStateListOf<EditRoom>().apply {
             bill.rooms.forEach { r ->

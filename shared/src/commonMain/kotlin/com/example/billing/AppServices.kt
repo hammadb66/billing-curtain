@@ -11,7 +11,6 @@ import com.example.billing.sync.BillCloudApi
 import com.example.billing.sync.CloudAuth
 import com.example.billing.sync.SyncManager
 
-/** App ke saare "kaam karne wale" objects ek jagah (ek hi database sab share karte hain). */
 class AppServices(
     val bills: BillRepository,
     val auth: AuthRepository,
@@ -33,7 +32,6 @@ fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): App
         settings = settings,
         license = license,
         firebase = firebase,
-        // Online / Offline sync (switch Admin Panel me). deviceId = is laptop ki pehchan.
         sync = SyncManager(settings, bills, BillCloudApi(CloudAuth(license.deviceId), license.deviceId), license.deviceId),
     )
 }

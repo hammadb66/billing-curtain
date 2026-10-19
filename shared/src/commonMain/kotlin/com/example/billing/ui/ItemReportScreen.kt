@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.billing.AppServices
 import com.example.billing.data.BillRepository
 import com.example.billing.data.ItemReportRow
 import com.example.billing.model.MasterItem
@@ -34,12 +35,12 @@ import com.example.billing.utils.isoDayToDisplay
 import com.example.billing.utils.isoDayToEpochMillis
 import com.example.billing.utils.nowIso
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ItemReportScreen(
     repository: BillRepository,
-    masterItems: List<MasterItem>,
     onBack: () -> Unit
 ) {
     PlatformBackHandler { onBack() }
@@ -49,7 +50,6 @@ fun ItemReportScreen(
     var fromDate by remember { mutableStateOf(today) }
     var toDate by remember { mutableStateOf(today) }
 
-    // Selected item state (null matlab All Items)
     var selectedItem by remember { mutableStateOf<String?>(null) }
     var showItemPicker by remember { mutableStateOf(false) }
 
@@ -58,7 +58,12 @@ fun ItemReportScreen(
 
     var showFromPicker by remember { mutableStateOf(false) }
     var showToPicker by remember { mutableStateOf(false) }
+    val services = koinInject<AppServices>()
+    var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
 
+    LaunchedEffect(Unit) {
+        masterItems = services.settings.getMasterItems()
+    }
     fun loadReport() {
         scope.launch {
             isLoading = true
@@ -67,16 +72,15 @@ fun ItemReportScreen(
         }
     }
 
-    // Jab bhi date ya item change ho, report load karo
     LaunchedEffect(fromDate, toDate, selectedItem) { loadReport() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Item Usage Report", fontWeight = FontWeight.Bold) },
+                title = { Text("Item Usage Report", fontWeight = FontWeight.Bold, color = Color(0xFF1E293B)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF1E293B))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
@@ -84,94 +88,106 @@ fun ItemReportScreen(
         },
         containerColor = Color(0xFFF4F6F8)
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+        // Box lagaya hai taake content center mein rahe aur screen par phailay nahi
+        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier
+                    .widthIn(max = 900.dp) // Professional software jesi width
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
 
-            // --- Filters Card ---
-            Card(shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(2.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
-                    // Date Range
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DateSelectorButton("From", fromDate, Modifier.weight(1f)) { showFromPicker = true }
-                        DateSelectorButton("To", toDate, Modifier.weight(1f)) { showToPicker = true }
-                    }
-
-                    // Item Selector Button (Dropdown jesa kaam karega)
-                    OutlinedButton(
-                        onClick = { showItemPicker = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E293B))
-                    ) {
-                        Text(
-                            text = selectedItem ?: "All Items",
-                            modifier = Modifier.weight(1f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select Item", tint = Color.Gray)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Results ---
-            if (isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AppGreen)
-                }
-            } else if (reportData.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(48.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text("No records found for this period.", color = Color.Gray)
-                    }
-                }
-            } else {
-                // Premium Summary Card
-                val totalQty = reportData.sumOf { it.qty }
-                val totalAmount = reportData.sumOf { it.total }
-
+                // --- Filters Card ---
                 Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = AppGreen),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Text("TOTAL QUANTITY", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
-                            Text(formatQty(totalQty), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DateSelectorButton("From", fromDate, Modifier.weight(1f)) { showFromPicker = true }
+                            DateSelectorButton("To", toDate, Modifier.weight(1f)) { showToPicker = true }
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("TOTAL AMOUNT", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
-                            Text("Rs ${formatMoney(totalAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+                        OutlinedButton(
+                            onClick = { showItemPicker = true },
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E293B))
+                        ) {
+                            Text(
+                                text = selectedItem ?: "All Items",
+                                modifier = Modifier.weight(1f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select Item", tint = Color.Gray)
                         }
                     }
                 }
 
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(reportData) { row ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(1.dp)
-                        ) {
-                            Column(Modifier.padding(16.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(row.itemName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF1E293B))
-                                    Text("Rs ${formatMoney(row.total)}", fontWeight = FontWeight.Bold, color = AppGreen)
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Bill: ${row.billId}", fontSize = 12.sp, color = Color.Gray)
-                                    Text("Date: ${displayDate(row.date)}", fontSize = 12.sp, color = Color.Gray)
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Box(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC), RoundedCornerShape(6.dp)).padding(8.dp)) {
-                                    Text("Qty: ${formatQty(row.qty)} ${row.unit}  @ Rs ${formatMoney(row.rate)}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+                Spacer(Modifier.height(16.dp))
+
+                // --- Results ---
+                if (isLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AppGreen)
+                    }
+                } else if (reportData.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No records found.", color = Color.Gray, fontSize = 15.sp)
+                    }
+                } else {
+                    // Summary Card (GREEN)
+                    val totalQty = reportData.sumOf { it.qty }
+                    val totalAmount = reportData.sumOf { it.total }
+
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = AppGreen),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    ) {
+                        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text("TOTAL QUANTITY", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
+                                Text(formatQty(totalQty), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("TOTAL AMOUNT", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
+                                Text("Rs ${formatMoney(totalAmount)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+
+                    // Compact Report List
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 32.dp)) {
+                        items(reportData) { row ->
+                            Card(
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(1.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(row.itemName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1E293B))
+                                        Text("Rs ${formatMoney(row.total)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppGreen)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Bill: ${row.billId}", fontSize = 12.sp, color = Color.Gray)
+                                        Text("Date: ${displayDate(row.date)}", fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                    HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFF1F5F9))
+
+                                    // Yahan se duplicate "Rs" hata diya gaya hai
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Qty: ${formatQty(row.qty)} ${row.unit}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+                                        Text("@ Rs ${formatMoney(row.rate)}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+                                    }
                                 }
                             }
                         }
@@ -181,7 +197,7 @@ fun ItemReportScreen(
         }
     }
 
-    // --- Item Picker Dialog (Search ke sath) ---
+    // --- Item Picker Dialog ---
     if (showItemPicker) {
         ItemPickerDialog(
             masterItems = masterItems,
@@ -214,14 +230,14 @@ fun ItemReportScreen(
     }
 }
 
-// Helper Composable for Date Selector
 @Composable
 private fun DateSelectorButton(label: String, dateIso: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        contentPadding = PaddingValues(horizontal = 8.dp)
     ) {
         Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp), tint = AppGreen)
         Spacer(Modifier.width(4.dp))
@@ -232,7 +248,6 @@ private fun DateSelectorButton(label: String, dateIso: String, modifier: Modifie
     }
 }
 
-// Helper Composable for Item Picker with Search
 @Composable
 private fun ItemPickerDialog(
     masterItems: List<MasterItem>,
@@ -247,25 +262,22 @@ private fun ItemPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Item for Report", fontWeight = FontWeight.Bold) },
+        title = { Text("Select Item", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                // Search Bar inside Dialog
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     placeholder = { Text("Search item...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen)
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
                 Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-
-                    // "All Items" Option
                     if (query.isBlank()) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable { onPick(null) },
@@ -282,7 +294,6 @@ private fun ItemPickerDialog(
                         HorizontalDivider(color = Color(0xFFF1F5F9))
                     }
 
-                    // Filtered List
                     if (filteredItems.isEmpty()) {
                         Text("No item found", color = Color.Gray, modifier = Modifier.padding(12.dp))
                     }
@@ -294,7 +305,7 @@ private fun ItemPickerDialog(
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
@@ -314,6 +325,8 @@ private fun ItemPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
+        shape = RoundedCornerShape(12.dp),
+        containerColor = Color.White
     )
 }
