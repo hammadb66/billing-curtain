@@ -310,7 +310,7 @@ fun AdminScreen(
                     // Online sync chal raha tha to band (purane shop ka data naye shop me na mile)
                     if (services.sync.handleShopChange()) {
                         scope.launch {
-                            snackbar.showSnackbar("Shop code badal gaya, isliye Online Sync band kar diya. Zaroorat ho to dobara ON karein.")
+                            snackbar.showSnackbar("The shop code has changed, so online syncing has been disabled. Please re-enable it if needed.")
                         }
                     }
                 }

@@ -34,10 +34,10 @@ import com.example.billing.sync.SyncStatus
 import kotlinx.coroutines.launch
 
 private fun SyncStatus.label(): String = when (this) {
-    SyncStatus.Disabled -> "Offline: data sirf is laptop me hai"
-    SyncStatus.Syncing -> "Sync ho raha hai..."
-    SyncStatus.Synced -> "Online: sab kuch Firebase ke saath barabar"
-    is SyncStatus.Waiting -> "Online: $pending tabdili bhejna baqi ($reason). Net aate hi khud ho jayegi."
+    SyncStatus.Disabled -> "Offline: The data is only on this laptop."
+    SyncStatus.Syncing -> "Syncing..."
+    SyncStatus.Synced -> "Online: Everything is equal with the firebase."
+    is SyncStatus.Waiting -> "Online: $pending Change yet to be sent ($reason). It will happen automatically once the internet comes on."
 }
 
 private fun SyncStatus.color(): Color = when (this) {
@@ -80,7 +80,7 @@ fun SyncPanel(services: AppServices) {
             busy = true
             message = null
             when (val r = services.sync.enableOnline(confirmForeign)) {
-                is EnableResult.Success -> message = r.note ?: "Online ho gaya. Data Firebase ke saath sync ho gaya."
+                is EnableResult.Success -> message = r.note ?: "Went online. Data synced with Firebase."
                 is EnableResult.Error -> message = r.message
                 is EnableResult.NeedsConfirm -> foreignShop = r.oldShop
             }
@@ -99,7 +99,7 @@ fun SyncPanel(services: AppServices) {
             busy = true
             message = null
             val err = services.sync.disableOnline()
-            if (err != null) forceOfflineReason = err else message = "Offline ho gaya. Firebase ka naya data local me aa gaya."
+            if (err != null) forceOfflineReason = err else message = "Went offline. The new data from Firebase has arrived locally."
             online = services.sync.isOnlineMode()
             busy = false
         }
@@ -132,17 +132,17 @@ fun SyncPanel(services: AppServices) {
                     onClick = {
                         scope.launch {
                             busy = true
-                            message = services.sync.syncNow() ?: "Sync mukammal."
+                            message = services.sync.syncNow() ?: "Sync complete."
                             busy = false
                         }
                     },
                 ) { Text("Sync Now") }
             }
             Text(
-                "ON karne par: is laptop ka purana data Firebase par jata hai aur Firebase ka data yahan aata hai. " +
-                    "Phir har naya / edit / delete bill online save hota hai (net na ho to pehle local me, net aane par khud upload). " +
-                    "Firebase se naya data bill banne par, app khulne par, aur History ke Refresh button par aata hai. " +
-                    "OFF karne par: Firebase ka saara data local me utar kar offline chalta hai.",
+                "When TURNED ON: Old data from this laptop is sent to Firebase, and data from Firebase is brought here. " +
+                        "Then, every new, edited, or deleted bill is saved online (if offline, saved locally first, then auto-uploaded when back online). " +
+                        "New data from Firebase updates when a bill is created, when the app opens, and on History Refresh. " +
+                        "When TURNED OFF: All Firebase data is downloaded locally and runs offline.",
                 fontSize = 12.sp,
                 color = Color.Gray,
             )
@@ -152,17 +152,17 @@ fun SyncPanel(services: AppServices) {
     foreignShop?.let { old ->
         AlertDialog(
             onDismissRequest = { foreignShop = null },
-            title = { Text("Purane shop ka data") },
+            title = { Text("Previous Shop Data") },
             text = {
                 Text(
-                    "Is laptop par shop '$old' ka data hai, lekin ab shop code alag hai. " +
-                        "Online karne par ye saare bills NAYE shop me chale jayenge.\n\n" +
-                        "Agar ye data naye shop ka nahi hai to Cancel karein."
+                    "This laptop contains data for shop '$old', but the shop code is different now. " +
+                            "Going online will move all these bills to the NEW shop.\n\n" +
+                            "If this data does not belong to the new shop, please click Cancel."
                 )
             },
             confirmButton = {
                 TextButton(onClick = { foreignShop = null; enable(confirmForeign = true) }) {
-                    Text("Haan, naye shop me bhejo", color = Color.Red)
+                    Text("Yes, Send it to new Shop", color = Color.Red)
                 }
             },
             dismissButton = { TextButton(onClick = { foreignShop = null }) { Text("Cancel") } },
@@ -172,8 +172,8 @@ fun SyncPanel(services: AppServices) {
     forceOfflineReason?.let { reason ->
         AlertDialog(
             onDismissRequest = { forceOfflineReason = null },
-            title = { Text("Offline nahi ho saka") },
-            text = { Text("$reason\n\nPhir bhi offline karein? Firebase ka naya data local me nahi aayega.") },
+            title = { Text("Could Not Switch Offline") },
+            text = { Text("$reason\n\nForce offline anyway? New data from Firebase will not be saved locally.") },
             confirmButton = {
                 TextButton(onClick = {
                     forceOfflineReason = null
@@ -181,10 +181,10 @@ fun SyncPanel(services: AppServices) {
                         busy = true
                         services.sync.disableOnline(force = true)
                         online = services.sync.isOnlineMode()
-                        message = "Offline kar diya (force)."
+                        message = "Switched to offline (forced)."
                         busy = false
                     }
-                }) { Text("Phir bhi offline karo", color = Color.Red) }
+                }) { Text("Force Offline Anyway", color = Color.Red) }
             },
             dismissButton = { TextButton(onClick = { forceOfflineReason = null }) { Text("Cancel") } },
         )
