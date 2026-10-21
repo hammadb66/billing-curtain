@@ -145,17 +145,34 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
 
     suspend fun getProduct(id: Long): Product? = listProducts().firstOrNull { it.id == id }
 
-    suspend fun addProduct(p: Product): Long = withContext(Dispatchers.Default) {
+
+    suspend fun addProduct(p: Product): String? = withContext(Dispatchers.Default) {
+        val existing = listProducts().any {
+            it.name.equals(p.name.trim(), true) &&
+                    it.categoryId == p.categoryId &&
+                    it.subcategoryId == p.subcategoryId
+        }
+        if (existing) return@withContext "Product '${p.name}' already exists in this Category/Subcategory."
+
         q.transactionWithResult {
             q.insertProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim())
             q.lastInsertedId().executeAsOne()
         }
+        null // Success
     }
 
-    suspend fun updateProduct(p: Product) = withContext(Dispatchers.Default) {
+    suspend fun updateProduct(p: Product): String? = withContext(Dispatchers.Default) {
+        val existing = listProducts().any {
+            it.name.equals(p.name.trim(), true) &&
+                    it.categoryId == p.categoryId &&
+                    it.subcategoryId == p.subcategoryId &&
+                    it.id != p.id
+        }
+        if (existing) return@withContext "Another product '${p.name}' already exists in this Category/Subcategory."
+
         q.updateProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim(), p.id)
+        null // Success
     }
-
     suspend fun deleteProduct(id: Long) = withContext(Dispatchers.Default) { q.deleteProduct(id) }
 
     // ==================== PURCHASES ====================

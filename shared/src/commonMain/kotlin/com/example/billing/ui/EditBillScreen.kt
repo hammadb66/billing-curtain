@@ -1,5 +1,6 @@
 package com.example.billing.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,7 +45,7 @@ private var editIdCounter = 0L
 
 private class EditItem(
     val name: String,
-    val initialQty: String,   // ⬅️ val add karo
+    val initialQty: String,
     initialRate: String,
     val unit: String,
     val productId: Long? = null,
@@ -55,7 +56,7 @@ private class EditItem(
 ) {
     var qty by mutableStateOf(initialQty)
     var rate by mutableStateOf(initialRate)
-    var displayType by mutableStateOf(initialDisplayType)   // ← state banao
+    var displayType by mutableStateOf(initialDisplayType)
 
     val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
     val isIncomplete: Boolean get() = (qty.isNotBlank() || rate.isNotBlank()) && total <= 0.0
@@ -67,19 +68,11 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
     val items = mutableStateListOf<EditItem>().apply { addAll(initialItems) }
     val total: Double get() = items.sumOf { it.total }
 
-    /** Wohi item us ke neeche dobara (alag rate ke liye). */
     fun duplicate(item: EditItem) {
         val i = items.indexOf(item)
         val copy = EditItem(
-            item.name,
-            "",
-            "",
-            item.unit,
-            item.productId,
-            item.productName,
-            item.categoryName,
-            item.subcategoryName,
-            item.displayType
+            item.name, "", "", item.unit,
+            item.productId, item.productName, item.categoryName, item.subcategoryName, item.displayType
         )
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
@@ -100,13 +93,13 @@ fun EditBillScreen(
     var discount by remember { mutableStateOf(bill.discount.toInputString()) }
     var extraCharges by remember { mutableStateOf(bill.extraCharges.toInputString()) }
     var discountIsPercent by remember { mutableStateOf(false) }
-    // Blank = 0 received (Billing screen jaisa). bill.received purane bills (null = poora mila) ko bhi sahi sambhalta hai.
     var received by remember { mutableStateOf(bill.received.toInputString()) }
     var isDirty by remember { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
     var addItemFor by remember { mutableStateOf<EditRoom?>(null) }
     var roomToDelete by remember { mutableStateOf<EditRoom?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+
     val services = koinInject<AppServices>()
     var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
     var showProduct by remember { mutableStateOf(bill.showProduct) }
@@ -114,12 +107,14 @@ fun EditBillScreen(
     var showSubcategory by remember { mutableStateOf(bill.showSubcategory) }
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
     var productStocks by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
+
     LaunchedEffect(Unit) {
         val allProds = services.vendors.listProductsWithStock()
         products = allProds
         productStocks = allProds.associate { it.id to (it.liveStock ?: it.openingStock) }
         masterItems = services.settings.getMasterItems()
     }
+
     val rooms = remember {
         mutableStateListOf<EditRoom>().apply {
             bill.rooms.forEach { r ->
@@ -160,7 +155,6 @@ fun EditBillScreen(
                 val missing = if (incompleteItem.second.qty.isBlank()) "Qty" else "Rate"
                 "\"$sectionName\" -> \"$itemName\" $missing is missing."
             }
-
             discountValue > subtotal -> "Discount is greater than subtotal."
             receivedValue > grandTotal + 0.005 -> "Received is greater than total."
             else -> null
@@ -189,16 +183,9 @@ fun EditBillScreen(
             isSaving = true
             try {
                 repository.updateBill(
-                    bill.id,
-                    customer.trim(),
-                    phone,
-                    finalRooms,
-                    discountValue,
-                    extraValue,
-                    receivedValue,
-                    showProduct,
-                    showCategory,
-                    showSubcategory
+                    bill.id, customer.trim(), phone, finalRooms,
+                    discountValue, extraValue, receivedValue,
+                    showProduct, showCategory, showSubcategory
                 )
                 onClose()
             } catch (e: Exception) {
@@ -212,53 +199,55 @@ fun EditBillScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = Color(0xFFF4F6F8),
+        containerColor = Color(0xFFF4F5F7),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { requestBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                title = {
-                    Column {
-                        Text("Edit Bill", fontWeight = FontWeight.Bold)
-                        Text(bill.invoiceText, fontSize = 12.sp, color = Color.Gray)
-                    }
-                },
-            )
-        },
-        // Chhota bottom bar: left me total, right me chhota Save button
-        bottomBar = {
-            Surface(shadowElevation = 8.dp, color = Color.White) {
+            // Custom Desktop Header
+            Surface(color = Color.White, shadowElevation = 1.dp) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
-                        Text("Rs ${formatMoney(grandTotal)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { requestBack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("Edit Bill", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
+                    Text(" • ${bill.invoiceText}", fontSize = 14.sp, color = Color.Gray)
+                }
+            }
+        },
+        bottomBar = {
+            // Custom Desktop Footer
+            Surface(color = Color.White, shadowElevation = 4.dp) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Column {
+                            Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
+                            Text("Rs ${formatMoney(grandTotal)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                        }
                         if (pending > 0.005) {
-                            Text(
-                                "Pending: Rs ${formatMoney(pending)}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DueColor
-                            )
+                            Column {
+                                Text("PENDING", fontSize = 10.sp, color = DueColor, fontWeight = FontWeight.Bold)
+                                Text("Rs ${formatMoney(pending)}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DueColor)
+                            }
                         }
                     }
+
                     Button(
                         onClick = { save() },
                         enabled = !isSaving,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
-                        modifier = Modifier.height(40.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppGreen),
+                        modifier = Modifier.height(44.dp).width(140.dp),
                     ) {
                         if (isSaving) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
                         } else {
-                            Text("Save", fontWeight = FontWeight.Bold)
+                            Text("SAVE CHANGES", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                 }
@@ -267,38 +256,39 @@ fun EditBillScreen(
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(
-                Modifier.widthIn(max = 900.dp).fillMaxWidth().fillMaxHeight(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.widthIn(max = 1000.dp).fillMaxWidth().fillMaxHeight(),
+                contentPadding = PaddingValues(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
                     SectionCard(title = "Customer Details") {
-                        OutlinedTextField(
-                            value = customer,
-                            onValueChange = { customer = it; isDirty = true },
-                            label = { Text("Customer Name") },
-                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = phone,
-                            onValueChange = { phone = sanitizePhone(it); isDirty = true },
-                            label = { Text("Phone Number") },
-                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
-                            supportingText = { Text("For another country use +code, e.g. +923012345678") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            OutlinedTextField(
+                                value = customer,
+                                onValueChange = { customer = it; isDirty = true },
+                                label = { Text("Customer Name") },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = phone,
+                                onValueChange = { phone = sanitizePhone(it); isDirty = true },
+                                label = { Text("Phone Number") },
+                                leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
 
                 item {
                     SectionCard(title = "Discount, Extra & Payment") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             DiscountInput(
                                 value = discount,
                                 onValueChange = { discount = it; isDirty = true },
@@ -312,7 +302,7 @@ fun EditBillScreen(
                                 onValueChange = { extraCharges = sanitizeDecimal(it); isDirty = true },
                                 label = { Text("Extra/Misc (Rs)") },
                                 singleLine = true,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(6.dp),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 modifier = Modifier.weight(1f),
                             )
@@ -333,7 +323,7 @@ fun EditBillScreen(
                                 ) { Text("Full", fontWeight = FontWeight.Bold) }
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(6.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -342,18 +332,22 @@ fun EditBillScreen(
 
                 item {
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Sections & Items", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("Sections & Items", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
                             Text("${rooms.size} section(s)", fontSize = 12.sp, color = Color.Gray)
                         }
-                        TextButton(onClick = { rooms.add(EditRoom("", emptyList())); isDirty = true }) {
-                            Icon(Icons.Default.AddCircle, contentDescription = null)
+                        Button(
+                            onClick = { rooms.add(EditRoom("", emptyList())); isDirty = true },
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))
+                        ) {
+                            Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Section")
+                            Text("Add Section", fontSize = 13.sp)
                         }
                     }
                 }
@@ -361,14 +355,13 @@ fun EditBillScreen(
                 items(rooms, key = { it.id }) { room ->
                     EditRoomCard(
                         room = room,
-                        productStocks = productStocks,   // ⬅️ YAHAN add karo
+                        productStocks = productStocks,
                         onChanged = { isDirty = true },
                         onAddItem = { addItemFor = room },
                         onDeleteRoom = { roomToDelete = room },
                     )
                 }
 
-                // Poora hisaab (bottom bar chhota rakhne ke liye yahan dikhaya)
                 item {
                     SectionCard(title = "Summary") {
                         AmountBreakdown(
@@ -390,21 +383,22 @@ fun EditBillScreen(
             productStocks = products.associate { it.id to (it.liveStock ?: it.openingStock) }
         }
     }
+
     addItemFor?.let { room ->
         AddItemDialog(
-            products = products, // <--- YEH ADD KAREIN
+            products = products,
             onPick = { p ->
                 room.items.add(EditItem(p.name, "", "", p.unit, p.id, p.name, p.categoryName, p.subcategoryName))
                 isDirty = true; addItemFor = null
             },
-            onManageProducts = { addItemFor = null }, // Edit screen se manage items open nahi kar rahe
+            onManageProducts = { addItemFor = null },
             onDismiss = { addItemFor = null },
         )
     }
 
     roomToDelete?.let { room ->
         ConfirmDialog(
-            "Delete Bill",
+            "Delete Section",
             "\"${room.name.ifBlank { "All Items" }}\" and all its items will be removed. Are you sure?",
             "Delete",
             { rooms.remove(room); isDirty = true; roomToDelete = null },
@@ -415,14 +409,12 @@ fun EditBillScreen(
     if (showDiscard) {
         AlertDialog(
             onDismissRequest = { showDiscard = false },
-            title = { Text("Discard changes?") },
+            title = { Text("Discard changes?", fontWeight = FontWeight.Bold) },
             text = { Text("You have unsaved changes that will be lost.") },
             dismissButton = { TextButton(onClick = { showDiscard = false }) { Text("Stay") } },
             confirmButton = {
                 TextButton(onClick = { showDiscard = false; onClose() }) {
-                    Text(
-                        "Discard", color = Color.Red
-                    )
+                    Text("Discard", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
         )
@@ -433,11 +425,13 @@ fun EditBillScreen(
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF546E7A))
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
             content()
         }
     }
@@ -453,12 +447,16 @@ private fun EditRoomCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column {
+            // Header
             Row(
-                Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(start = 16.dp, end = 4.dp),
+                Modifier.fillMaxWidth().background(Color(0xFFF8FAFC), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                    .padding(start = 16.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BasicTextField(
@@ -466,7 +464,7 @@ private fun EditRoomCard(
                     onValueChange = { room.name = it; onChanged() },
                     singleLine = true,
                     textStyle = TextStyle(
-                        fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface
+                        fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2C3E50)
                     ),
                     modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                     decorationBox = { inner ->
@@ -476,29 +474,29 @@ private fun EditRoomCard(
                         }
                     },
                 )
-                Text("Rs ${formatMoney(room.total)}", color = AppGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Rs ${formatMoney(room.total)}", color = AppGreen, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 IconButton(onClick = onDeleteRoom) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete bill", tint = Color.Red)
+                    Icon(Icons.Default.Delete, contentDescription = "Delete section", tint = Color.Red, modifier = Modifier.size(20.dp))
                 }
             }
-            HorizontalDivider(color = Color(0xFFEEEEEE))
+            HorizontalDivider(color = Color(0xFFE0E0E0))
 
+            // Items Body
             Column(
-                Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (room.items.isEmpty()) {
                     Text(
                         "No items added yet",
                         fontSize = 13.sp,
                         color = Color.Gray,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
                 room.items.forEachIndexed { index, item ->
                     key(item) {
                         val occurrence = room.items.take(index + 1).count { it.name == item.name }
-                        // Live stock + is item ki current qty (kyunke is bill ka qty pehle se minus ho chuka hai)
-                        // NAYA (sahi):
                         val liveStock = productStocks[item.productId] ?: 0.0
                         val availableStock = liveStock + (item.initialQty.toDoubleOrNull() ?: 0.0)
                         ItemEntryCard(
@@ -516,17 +514,22 @@ private fun EditRoomCard(
                             total = item.total,
                             isIncomplete = item.isIncomplete,
                             unit = item.unit,
-                            stock = availableStock,   // ⬅️ YAHAN
+                            stock = availableStock,
                             onDuplicate = { room.duplicate(item); onChanged() },
                             onDelete = { room.items.remove(item); onChanged() },
                         )
                     }
                 }
 
-                TextButton(onClick = onAddItem) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = AppGreen, modifier = Modifier.size(18.dp))
+                // Add Item Button
+                TextButton(
+                    onClick = onAddItem,
+                    modifier = Modifier.padding(top = 4.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = AppGreen)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Add Item", color = AppGreen, fontWeight = FontWeight.Bold)
+                    Text("Add Item", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }

@@ -32,6 +32,16 @@ class BillingViewModel(
         }
     }
 
+
+    fun setDisplayOption(option: String) {
+        applyDisplayOption(option)
+    }
+
+    private fun applyDisplayOption(option: String) {
+        form.showProduct     = option == "product"
+        form.showCategory    = option == "category"
+        form.showSubcategory = option == "subcategory"
+    }
     fun loadCustomerInfo(phone: String) {
         if (phone.length >= 7) {
             viewModelScope.launch {

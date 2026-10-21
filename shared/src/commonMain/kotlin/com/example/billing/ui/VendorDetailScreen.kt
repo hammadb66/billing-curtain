@@ -1,5 +1,6 @@
 package com.example.billing.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,186 +66,174 @@ fun VendorDetailScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = { Text(vendor?.name ?: "Vendor", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-                },
-                actions = {
+        containerColor = Color(0xFFF4F5F7),
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            // ================== HEADER ==================
+            Surface(color = Color.White, shadowElevation = 1.dp) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50)) }
+                    Spacer(Modifier.width(12.dp))
+                    Text(vendor?.name ?: "Vendor Details", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
 
+                    Spacer(Modifier.weight(1f))
+
+                    // Actions
                     IconButton(onClick = {
                         scope.launch {
                             val rows = mutableListOf<PdfRow>()
-
-                            // Header
                             rows += PdfRow(left = "VENDOR STATEMENT", bold = true, fontSize = 22f)
                             rows += PdfRow(left = "Date: ${displayDate(nowIso())}", fontSize = 12f)
                             rows += PdfRow(kind = RowKind.LINE)
-
-                            // Vendor Info
                             rows += PdfRow(left = "Name: ${vendor?.name}", bold = true, fontSize = 14f)
                             rows += PdfRow(left = "Phone: ${vendor?.phone1}", fontSize = 12f)
-                            if (vendor?.address?.isNotBlank() == true) {
-                                rows += PdfRow(left = "Address: ${vendor?.address}", fontSize = 12f)
-                            }
+                            if (vendor?.address?.isNotBlank() == true) rows += PdfRow(left = "Address: ${vendor?.address}", fontSize = 12f)
                             rows += PdfRow(kind = RowKind.SPACE)
-
-                            // Current Balance
                             rows += PdfRow(right = "CURRENT BALANCE: Rs ${formatMoney(balance)}", bold = true, fontSize = 16f)
                             rows += PdfRow(kind = RowKind.SPACE)
 
-                            // Purchases History
                             rows += PdfRow(left = "--- PURCHASES ---", bold = true, fontSize = 14f)
-                            if (purchases.isEmpty()) {
-                                rows += PdfRow(left = "No purchases found.", fontSize = 12f)
-                            } else {
-                                purchases.forEach { pu ->
-                                    rows += PdfRow(
-                                        left = "Date: ${displayDate(pu.date)} | Items: ${pu.items.size}",
-                                        right = "Total: Rs ${formatMoney(pu.total)}",
-                                        fontSize = 12f
-                                    )
-                                    val details = buildString {
-                                        append("  Paid: Rs ${formatMoney(pu.paid)}")
-                                        if (pu.discount > 0) append("  |  Disc: Rs ${formatMoney(pu.discount)}")
-                                    }
-                                    rows += PdfRow(
-                                        left = details,
-                                        right = "Bal: Rs ${formatMoney(pu.balance)}",
-                                        fontSize = 11f
-                                    )
-                                }
+                            if (purchases.isEmpty()) rows += PdfRow(left = "No purchases found.", fontSize = 12f)
+                            else purchases.forEach { pu ->
+                                rows += PdfRow(left = "Date: ${displayDate(pu.date)} | Items: ${pu.items.size}", right = "Total: Rs ${formatMoney(pu.total)}", fontSize = 12f)
+                                rows += PdfRow(left = "  Paid: Rs ${formatMoney(pu.paid)}", right = "Bal: Rs ${formatMoney(pu.balance)}", fontSize = 11f)
                             }
                             rows += PdfRow(kind = RowKind.SPACE)
 
-                            // Payments History
                             rows += PdfRow(left = "--- PAYMENTS ---", bold = true, fontSize = 14f)
-                            if (payments.isEmpty()) {
-                                rows += PdfRow(left = "No payments found.", fontSize = 12f)
-                            } else {
-                                payments.forEach { p ->
-                                    rows += PdfRow(
-                                        left = "Date: ${displayDate(p.date)} | Note: ${p.note.ifBlank { "-" }}",
-                                        right = "Amount: Rs ${formatMoney(p.amount)}",
-                                        fontSize = 12f
-                                    )
-                                    if (p.discount > 0) {
-                                        rows += PdfRow(
-                                            left = "  Discount: Rs ${formatMoney(p.discount)}",
-                                            right = "Covered: Rs ${formatMoney(p.amount + p.discount)}",
-                                            fontSize = 11f
-                                        )
-                                    }
-                                }
+                            if (payments.isEmpty()) rows += PdfRow(left = "No payments found.", fontSize = 12f)
+                            else payments.forEach { p ->
+                                rows += PdfRow(left = "Date: ${displayDate(p.date)} | Note: ${p.note.ifBlank { "-" }}", right = "Amount: Rs ${formatMoney(p.amount)}", fontSize = 12f)
                             }
 
-                            // Footer
                             rows += PdfRow(kind = RowKind.LINE)
                             rows += PdfRow(left = "Software by ${Branding.COMPANY}  |  Contact: ${Branding.PHONE}", fontSize = 9f)
 
-                            // File name safely create karein (spaces hata kar)
                             val safeName = vendor?.name?.filter { it.isLetterOrDigit() } ?: "Vendor"
                             printer.print("Vendor_Statement_$safeName", rows)
                         }
                     }) {
-                        Icon(Icons.Default.Print, "Print")
+                        Icon(Icons.Default.Print, "Print", tint = Color.DarkGray)
                     }
-                    IconButton(onClick = { showEdit = true }) { Icon(Icons.Default.Edit, "Edit") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { editingPayment = null; showPayment = true },
-                containerColor = AppGreen,
-                content = { Icon(Icons.Default.Payments, null, tint = Color.White); Spacer(Modifier.width(8.dp)); Text("Payment", color = Color.White) }
-            )
-        },
-        containerColor = Color(0xFFF4F6F8),
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(
-                Modifier.widthIn(max = 900.dp).fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item {
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(14.dp)) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            InfoLine("Phone 1", vendor?.phone1.orEmpty())
-                            InfoLine("Phone 2", vendor?.phone2.orEmpty())
-                            InfoLine("Address", vendor?.address.orEmpty())
-                            InfoLine("Description", vendor?.accountDescription.orEmpty())
-                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                            val balColor = if (balance > 0.005) DueColor else if (balance < -0.005) PaidColor else Color.Gray
-                            Text(
-                                if (balance > 0.005) "Payable: Rs ${formatMoney(balance)}"
-                                else if (balance < -0.005) "Advance: Rs ${formatMoney(-balance)}"
-                                else "Settled",
-                                color = balColor, fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                            )
-                        }
+
+                    IconButton(onClick = { showEdit = true }) { Icon(Icons.Default.Edit, "Edit", tint = Color.DarkGray) }
+
+                    Spacer(Modifier.width(16.dp))
+                    Button(
+                        onClick = { editingPayment = null; showPayment = true },
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppGreen),
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Icon(Icons.Default.Payments, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Payment", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
 
-                item { SectionTitle("Payments (${payments.size})") }
-                if (payments.isEmpty()) item { Text("No payments yet.", color = Color.Gray, fontSize = 13.sp) }
-                items(payments) { p ->
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(10.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-
-                            Column(Modifier.weight(1f)) {
-                                // Total covered (amount + discount) prominently
-                                Text(
-                                    "Rs ${formatMoney(p.amount + p.discount)}",
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppGreen,
-                                )
-                                // Breakdown agar discount hai
-                                if (p.discount > 0) {
-                                    Text(
-                                        "(Paid Rs ${formatMoney(p.amount)} + Disc Rs ${formatMoney(p.discount)})",
-                                        fontSize = 11.sp,
-                                        color = Color(0xFF1565C0),
-                                        fontWeight = FontWeight.Medium,
-                                    )
+            // ================== MAIN CONTENT ==================
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(
+                    Modifier.widthIn(max = 1000.dp).fillMaxSize(),
+                    contentPadding = PaddingValues(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(48.dp)) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        InfoLine("Phone 1", vendor?.phone1.orEmpty())
+                                        InfoLine("Phone 2", vendor?.phone2.orEmpty())
+                                    }
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        InfoLine("Address", vendor?.address.orEmpty())
+                                        InfoLine("Description", vendor?.accountDescription.orEmpty())
+                                    }
                                 }
-                                Text(displayDate(p.date), fontSize = 11.sp, color = Color.Gray)
-                                if (p.note.isNotBlank()) Text(p.note, fontSize = 12.sp)
+                                HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFE0E0E0))
+                                val balColor = if (balance > 0.005) DueColor else if (balance < -0.005) PaidColor else Color.Gray
+                                Text(
+                                    if (balance > 0.005) "Payable Balance: Rs ${formatMoney(balance)}"
+                                    else if (balance < -0.005) "Advance Balance: Rs ${formatMoney(-balance)}"
+                                    else "Settled",
+                                    color = balColor, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                                )
                             }
-
-                            IconButton(onClick = { editingPayment = p; showPayment = true }) {
-                                Icon(Icons.Default.Edit, "Edit", tint = Color(0xFF1565C0))
-                            }
-                            IconButton(onClick = { paymentToDelete = p }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
                         }
                     }
-                }
 
-                item { SectionTitle("Purchases (${purchases.size})") }
-                if (purchases.isEmpty()) item { Text("No purchases yet.", color = Color.Gray, fontSize = 13.sp) }
-                items(purchases) { pu ->
-                    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(10.dp)) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Purchase #${pu.id} • ${displayDate(pu.date)}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            pu.items.take(3).forEach { it ->
-                                Text("• ${it.name} — ${it.qty} × ${formatMoney(it.priceValue)}", fontSize = 12.sp, color = Color.DarkGray)
+                    item { SectionTitle("Payments (${payments.size})") }
+                    if (payments.isEmpty()) item { Text("No payments yet.", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp)) }
+                    items(payments) { p ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Rs ${formatMoney(p.amount + p.discount)}", fontWeight = FontWeight.Bold, color = AppGreen, fontSize = 16.sp)
+                                    if (p.discount > 0) Text("(Paid Rs ${formatMoney(p.amount)} + Disc Rs ${formatMoney(p.discount)})", fontSize = 11.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Medium)
+                                    Text(displayDate(p.date), fontSize = 12.sp, color = Color.Gray)
+                                }
+                                if (p.note.isNotBlank()) {
+                                    Text(p.note, fontSize = 13.sp, color = Color.DarkGray, modifier = Modifier.weight(1f))
+                                } else Spacer(Modifier.weight(1f))
+
+                                IconButton(onClick = { editingPayment = p; showPayment = true }) { Icon(Icons.Default.Edit, "Edit", tint = Color(0xFF1565C0), modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = { paymentToDelete = p }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red, modifier = Modifier.size(20.dp)) }
                             }
-                            if (pu.items.size > 3) Text("+ ${pu.items.size - 3} more", fontSize = 11.sp, color = Color.Gray)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Total: Rs ${formatMoney(pu.total)}", fontWeight = FontWeight.Bold)
-                                Text("Paid: Rs ${formatMoney(pu.paid)}", color = PaidColor)
-                            }
-                            if (pu.discount > 0) {
-                                Text("Discount: Rs ${formatMoney(pu.discount)}", color = Color(0xFF1565C0), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                            if (pu.balance > 0.005) Text("Balance: Rs ${formatMoney(pu.balance)}", color = DueColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    item { SectionTitle("Purchases (${purchases.size})") }
+                    if (purchases.isEmpty()) item { Text("No purchases yet.", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp)) }
+                    items(purchases) { pu ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Purchase #${pu.id} • ${displayDate(pu.date)}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1E293B))
+                                    Text("Total: Rs ${formatMoney(pu.total)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    pu.items.take(3).forEach { it ->
+                                        Text("• ${it.name} — ${it.qty} × ${formatMoney(it.priceValue)}", fontSize = 12.sp, color = Color.DarkGray)
+                                    }
+                                    if (pu.items.size > 3) Text("+ ${pu.items.size - 3} more items...", fontSize = 11.sp, color = Color.Gray)
+                                }
+
+                                HorizontalDivider(color = Color(0xFFF1F5F9))
+
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                                    Text("Paid: Rs ${formatMoney(pu.paid)}", color = PaidColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    if (pu.discount > 0) Text("Discount: Rs ${formatMoney(pu.discount)}", color = Color(0xFF1565C0), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    if (pu.balance > 0.005) Text("Balance: Rs ${formatMoney(pu.balance)}", color = DueColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(32.dp)) }
                 }
-                item { Spacer(Modifier.height(60.dp)) }
             }
         }
     }
@@ -286,13 +275,17 @@ fun VendorDetailScreen(
 @Composable
 private fun InfoLine(label: String, value: String) {
     if (value.isBlank()) return
-    Row { Text("$label: ", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.width(90.dp)); Text(value, fontSize = 13.sp) }
+    Row {
+        Text("$label: ", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
+        Text(value, fontSize = 13.sp, color = Color(0xFF1E293B))
+    }
 }
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B), modifier = Modifier.padding(top = 4.dp))
+    Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(top = 8.dp))
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PaymentDialog(
@@ -314,51 +307,57 @@ private fun PaymentDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(if (initial == null) "Add Payment" else "Edit Payment") },
+        title = { Text(if (initial == null) "Add Payment" else "Edit Payment", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(amount, { amount = sanitizeDecimal(it) }, label = { Text("Amount Paid (Rs)") },
-                    singleLine = true, enabled = !busy,
+                    singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth())
 
                 OutlinedTextField(discount, { discount = sanitizeDecimal(it) }, label = { Text("Discount (Rs) — optional") },
-                    singleLine = true, enabled = !busy,
+                    singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth())
 
                 if (discountVal > 0) {
-                    Text("Total covered: Rs ${formatMoney(totalCovered)}",
-                        fontSize = 12.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
+                    Text("Total covered: Rs ${formatMoney(totalCovered)}", fontSize = 13.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
                 }
 
-                OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.DateRange, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                    Text("Date: ${isoDayToDisplay(dateIso.take(10))}")
+                OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))) {
+                    Icon(Icons.Default.DateRange, null, Modifier.size(16.dp), tint = Color.Gray)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Date: ${isoDayToDisplay(dateIso.take(10))}", color = Color(0xFF2C3E50))
                 }
-                OutlinedTextField(note, { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(note, { note = it }, label = { Text("Note") }, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy && totalCovered > 0.0, onClick = {
-                scope.launch {
-                    busy = true
-                    onSave(amountVal, discountVal, dateIso, note)
-                    busy = false; onDismiss()
-                }
-            }) { Text("Save") }
+            Button(
+                enabled = !busy && totalCovered > 0.0,
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        onSave(amountVal, discountVal, dateIso, note)
+                        busy = false; onDismiss()
+                    }
+                },
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                else Text("Save Payment", fontWeight = FontWeight.Bold)
+            }
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
+        shape = RoundedCornerShape(8.dp),
+        containerColor = Color.White
     )
 
     if (showDate) {
         val state = rememberDatePickerState(initialSelectedDateMillis = isoDayToEpochMillis(dateIso.take(10)))
         DatePickerDialog(
             onDismissRequest = { showDate = false },
-            confirmButton = { TextButton(onClick = {
-                state.selectedDateMillis?.let { dateIso = epochMillisToIsoDay(it) }
-                showDate = false
-            }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { state.selectedDateMillis?.let { dateIso = epochMillisToIsoDay(it) }; showDate = false }) { Text("OK") } },
             dismissButton = { TextButton(onClick = { showDate = false }) { Text("Cancel") } },
         ) { DatePicker(state = state) }
     }

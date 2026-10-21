@@ -3,6 +3,7 @@ package com.example.billing.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -14,46 +15,29 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.billing.AppServices
-import com.example.billing.data.BillRepository
-import com.example.billing.data.masterItems
 import com.example.billing.model.BillingFormState
-import com.example.billing.model.ItemState
-import com.example.billing.model.MasterItem
 import com.example.billing.model.Product
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
 import com.example.billing.presentation.BillingViewModel
-import com.example.billing.utils.Branding
-import com.example.billing.utils.PlatformBackHandler
-import com.example.billing.utils.displayDate
-import com.example.billing.utils.formatMoney
-import com.example.billing.utils.nowIso
-import com.example.billing.utils.sanitizeDecimal
-import com.example.billing.utils.sanitizePhone
-import com.example.billing.utils.toInputString
+import com.example.billing.utils.*
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -67,9 +51,11 @@ fun BillingScreen(
     onOpenManageItems: () -> Unit,
     onOpenItemReport: () -> Unit,
     userName: String,
-    onOpenVendors: () -> Unit,        // ← NAYA
-    onOpenPurchases: () -> Unit,      // ← NAYA
-    isDeveloper: Boolean
+    onOpenVendors: () -> Unit,
+    onOpenPurchases: () -> Unit,
+    isDeveloper: Boolean,
+    exporter: FileExporter?,
+    importer: FileImporter?
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -79,23 +65,26 @@ fun BillingScreen(
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    // Koin injects
+
+    // Backup / Restore States
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var showImportConfirm by remember { mutableStateOf(false) }
+    var pendingImportText by remember { mutableStateOf<String?>(null) }
+
     val viewModel: BillingViewModel = koinViewModel()
     val services = koinInject<AppServices>()
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
-    LaunchedEffect(Unit) { products = services.vendors.listProductsWithStock() }    // ViewModel se state
+    LaunchedEffect(Unit) { products = services.vendors.listProductsWithStock() }
     val form = viewModel.form
     val previousBalance by viewModel.previousBalance.collectAsState()
 
-    // Duplicate LaunchedEffect hata dein, sirf ye rakhein:
     LaunchedEffect(form.phone) {
         viewModel.loadCustomerInfo(form.phone)
     }
 
-        PlatformBackHandler {
+    PlatformBackHandler {
         showExitConfirm = true
     }
-
 
     if (showExitConfirm) {
         AlertDialog(
@@ -112,6 +101,7 @@ fun BillingScreen(
                 TextButton(onClick = { showExitConfirm = false }) { Text("Cancel") }
             })
     }
+
     val filledItems by remember { derivedStateOf { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } } }
     val summary = "${form.rooms.size} Section(s) | $filledItems Item(s)"
 
@@ -147,7 +137,7 @@ fun BillingScreen(
                     } catch (e: Throwable) {
                         snackText = "Bill saved, but print failed."
                     }
-                    products = services.vendors.listProductsWithStock()   // ⬅️ YAHAN
+                    products = services.vendors.listProductsWithStock()
                     isPrinting = false
                     snackText?.let { snackbar.showSnackbar(it) }
                 }
@@ -161,83 +151,95 @@ fun BillingScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = Color(0xFFF4F6F8),
+        containerColor = Color(0xFFF4F5F7), // Desktop background
     ) { padding ->
         BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
-            val wide = maxWidth >= 840.dp
+            val wide = maxWidth >= 950.dp // Desktop/Laptop breakpoint
 
             if (wide) {
+                // ================== TOP LEVEL DESKTOP LAYOUT ==================
                 Row(Modifier.fillMaxSize()) {
+                    // 1. LEFT SIDEBAR (Navigation)
+                    DesktopSidebar(
+                        onOpenHistory = onOpenHistory,
+                        onOpenItemReport = onOpenItemReport,
+                        onOpenManageItems = onOpenManageItems,
+                        onOpenVendors = onOpenVendors,
+                        onOpenPurchases = onOpenPurchases,
+                        onOpenBackupRestore = { showBackupDialog = true },
+                        onLogout = onLogout,
+                        userName = userName,
+                        isDeveloper = isDeveloper,
+                        enabled = !isPrinting
+                    )
+
+                    VerticalDivider(color = Color(0xFFE0E0E0))
+
+                    // 2. CENTER PANEL (Main Billing Area)
                     Column(
-                        Modifier.width(380.dp).fillMaxHeight().background(Color.White)
-                            .verticalScroll(rememberScrollState()).padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        Modifier.weight(1f).fillMaxHeight().background(Color.White)
                     ) {
-                        Text("Billing System", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = AppGreen)
-                        Text("by ${Branding.COMPANY}", fontSize = 16.sp, color = Color.Gray)
+                        // Toolbar Top
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("New Invoice", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
+                            Spacer(Modifier.weight(1f))
+                            Text(summary, fontSize = 13.sp, color = Color.Gray)
+                            Spacer(Modifier.width(16.dp))
+                            Button(
+                                onClick = { form.addRoom() },
+                                enabled = !isPrinting,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Section", fontSize = 13.sp)
+                            }
+                        }
 
-                        HeaderBlock(
-                            form = form,
-                            onOpenHistory = onOpenHistory,
-                            onOpenItemReport = onOpenItemReport,
-                            onOpenManageItems = onOpenManageItems,
-                            onOpenVendors = onOpenVendors,
-                            onOpenPurchases = onOpenPurchases,
-                            onLogout = onLogout,
-                            userName = userName,
-                            isDeveloper = isDeveloper,
-                            enabled = !isPrinting,
-                            previousBalance = previousBalance
-                        )
                         HorizontalDivider(color = Color(0xFFEEEEEE))
 
-                        FinancialAdjustmentsBlock(form, enabled = !isPrinting)
-                        DisplayOptionsBlock(form)          // ← ye add karo
-                        HorizontalDivider(color = Color(0xFFEEEEEE))
-                        AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
-                        if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance)
-                        ActionBlock(
-                            total = form.grandTotal,
-                            summary = summary,
-                            compact = false,
-                            enabled = !isPrinting,
-                            onPrint = { printAndSave() },
-                            onReset = { confirmReset = true },
-                        )
+                        LazyColumn(
+                            Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
+                        }
                     }
-                    LazyColumn(
-                        Modifier.weight(1f).fillMaxHeight(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
-                    }
+
+                    VerticalDivider(color = Color(0xFFE0E0E0))
+
+                    // 3. RIGHT PANEL (Checkout & Summary)
+                    RightCheckoutPanel(
+                        form = form,
+                        viewModel = viewModel,
+                        previousBalance = previousBalance,
+                        isPrinting = isPrinting,
+                        onPrint = { printAndSave() },
+                        onReset = { confirmReset = true }
+                    )
                 }
             } else {
+                // ================== MOBILE / SMALL SCREEN LAYOUT ==================
                 Column(Modifier.fillMaxSize()) {
                     LazyColumn(
                         Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(12.dp),
+                        contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item {
-                            Text(
-                                "Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen
-                            )
-                        }
-                        item {
-                            Text(
-                                "by ${Branding.COMPANY}", fontSize = 16.sp, color = Color.Gray
-                            )
-                        }
-                        item {
-                            HeaderBlock(
+                            MobileHeaderBlock(
                                 form = form,
                                 onOpenHistory = onOpenHistory,
                                 onOpenItemReport = onOpenItemReport,
                                 onOpenManageItems = onOpenManageItems,
                                 onOpenVendors = onOpenVendors,
                                 onOpenPurchases = onOpenPurchases,
+                                onOpenBackupRestore = { showBackupDialog = true },
                                 onLogout = onLogout,
                                 userName = userName,
                                 isDeveloper = isDeveloper,
@@ -246,22 +248,17 @@ fun BillingScreen(
                             )
                         }
                         item { FinancialAdjustmentsBlock(form, enabled = !isPrinting) }
-                        item { DisplayOptionsBlock(form) } // ← ye add karo
-
+                        item { DisplayOptionsBlock(form, onOptionChange = { viewModel.setDisplayOption(it) }) }
                         roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
-                        Column(Modifier.padding(12.dp)) {
-                            AmountBreakdown(
-                                form.subtotal, form.discountValue, form.extraValue, Modifier.padding(bottom = 6.dp)
-                            )
-                            if (form.balance > 0.005) BalanceBanner(
-                                form.receivedValue, form.balance, Modifier.padding(bottom = 6.dp)
-                            )
-                            ActionBlock(
+                        Column(Modifier.padding(16.dp)) {
+                            AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
+                            if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance)
+                            Spacer(Modifier.height(12.dp))
+                            MobileActionBlock(
                                 total = form.grandTotal,
                                 summary = summary,
-                                compact = true,
                                 enabled = !isPrinting,
                                 onPrint = { printAndSave() },
                                 onReset = { confirmReset = true },
@@ -276,13 +273,10 @@ fun BillingScreen(
                     onDismissRequest = {},
                     properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator(color = AppGreen)
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(Modifier.height(16.dp))
                             Text("Printing & Saving Bill...", fontWeight = FontWeight.Bold)
                         }
                     }
@@ -292,19 +286,13 @@ fun BillingScreen(
     }
 
     LaunchedEffect(addItemForRoom) {
-        if (addItemForRoom != null) {
-            products = services.vendors.listProductsWithStock()
-        }
+        if (addItemForRoom != null) { products = services.vendors.listProductsWithStock() }
     }
 
     addItemForRoom?.let { room ->
         AddItemDialog(
             products = products,
-            onPick = { p ->
-                // Direct liveStock use karein, async call ki zaroorat nahi
-                room.addProduct(p, p.liveStock ?: p.openingStock)
-                addItemForRoom = null
-            },
+            onPick = { p -> room.addProduct(p, p.liveStock ?: p.openingStock); addItemForRoom = null },
             onManageProducts = { addItemForRoom = null; onOpenManageItems() },
             onDismiss = { addItemForRoom = null },
         )
@@ -312,21 +300,313 @@ fun BillingScreen(
 
     message?.let { (title, text) -> MessageDialog(title, text) { message = null } }
     roomToDelete?.let { room ->
-        ConfirmDialog(  "Delete Bill",
-            "Are you sure you want to delete this bill?",
-            "Confirm",
-            { form.removeRoom(room); roomToDelete = null },
-            { roomToDelete = null })
+        ConfirmDialog("Delete Bill", "Are you sure you want to delete this bill?", "Confirm",
+            { form.removeRoom(room); roomToDelete = null }, { roomToDelete = null })
     }
     if (confirmReset) {
-        ConfirmDialog(
-            "Reset",
-            "Do you want to clear all the fields?",
-            "Reset",
-            { form.reset(); confirmReset = false },
-            { confirmReset = false })
+        ConfirmDialog("Reset", "Do you want to clear all the fields?", "Reset",
+            { form.reset(); confirmReset = false }, { confirmReset = false })
+    }
+
+    // ========== BACKUP / RESTORE DIALOGS ==========
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Full Backup / Restore") },
+            text = { Text("Export creates a JSON file with ALL data.\n\nImport will REPLACE all current data.", color = Color.Red) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBackupDialog = false
+                    scope.launch {
+                        try {
+                            val content = services.backup.exportAll()
+                            val where = exporter?.saveText("full_backup_${nowIso().take(10)}.json", content)
+                            snackbar.showSnackbar(if (where != null) "Exported to $where" else "Export cancelled.")
+                        } catch (e: Exception) { snackbar.showSnackbar("Export failed: ${e.message}") }
+                    }
+                }) { Text("Export All") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showBackupDialog = false
+                    scope.launch {
+                        try {
+                            val text = importer?.pickJsonFile()
+                            if (!text.isNullOrBlank()) {
+                                pendingImportText = text
+                                showImportConfirm = true
+                            }
+                        } catch (e: Exception) { snackbar.showSnackbar("Import failed: ${e.message}") }
+                    }
+                }) { Text("Import / Restore", color = Color.Red) }
+            }
+        )
+    }
+
+    if (showImportConfirm && pendingImportText != null) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirm = false; pendingImportText = null },
+            title = { Text("⚠️ Warning! Data Replace", color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("This will DELETE all current data and replace it with the backup. Are you sure?", color = Color.DarkGray)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showImportConfirm = false
+                    val text = pendingImportText
+                    pendingImportText = null
+                    if (text != null) {
+                        scope.launch {
+                            try {
+                                val err = services.backup.importAll(text)
+                                if (err == null) {
+                                    snackbar.showSnackbar("Import successful! All data restored.")
+                                    products = services.vendors.listProductsWithStock()
+                                } else snackbar.showSnackbar("Import failed: $err")
+                            } catch (e: Exception) { snackbar.showSnackbar("Import failed: ${e.message}") }
+                        }
+                    }
+                }) { Text("Yes, Replace All", color = Color.Red, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportConfirm = false; pendingImportText = null }) { Text("Cancel") }
+            }
+        )
     }
 }
+
+// ================== DESKTOP UI COMPONENTS ==================
+
+@Composable
+private fun DesktopSidebar(
+    onOpenHistory: () -> Unit,
+    onOpenItemReport: () -> Unit,
+    onOpenManageItems: () -> Unit,
+    onOpenVendors: () -> Unit,
+    onOpenPurchases: () -> Unit,
+    onOpenBackupRestore: () -> Unit,
+    onLogout: () -> Unit,
+    userName: String,
+    isDeveloper: Boolean,
+    enabled: Boolean
+) {
+    Column(
+        Modifier.width(240.dp).fillMaxHeight().background(Color(0xFFF8F9FA)).padding(16.dp)
+    ) {
+        // Branding
+        Text("Billing System", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = AppGreen)
+        Text("by ${Branding.COMPANY}", fontSize = 12.sp, color = Color.Gray)
+        Spacer(Modifier.height(24.dp))
+
+        // Navigation Items
+        SidebarButton("Billing", Icons.Default.ShoppingCart, selected = true) { }
+        SidebarButton("History", Icons.Outlined.History, enabled = enabled) { onOpenHistory() }
+        SidebarButton("Item Report", Icons.Outlined.BarChart, enabled = enabled) { onOpenItemReport() }
+        SidebarButton("Products", Icons.Outlined.Category, enabled = enabled) { onOpenManageItems() }
+        SidebarButton("Vendors", Icons.Outlined.People, enabled = enabled) { onOpenVendors() }
+        SidebarButton("Purchases", Icons.Outlined.LocalShipping, enabled = enabled) { onOpenPurchases() }
+
+        if (isDeveloper) {
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color.LightGray)
+            Spacer(Modifier.height(8.dp))
+            SidebarButton("Backup / Restore", Icons.Outlined.SettingsBackupRestore, enabled = enabled) { onOpenBackupRestore() }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // User Info & Logout
+        HorizontalDivider(color = Color.LightGray)
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.AccountCircle, null, tint = Color.Gray, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(userName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(if (isDeveloper) "Developer" else "Staff", fontSize = 11.sp, color = Color.Gray)
+            }
+            IconButton(onClick = onLogout, enabled = enabled) {
+                Icon(Icons.Default.Logout, "Logout", tint = Color.Red)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SidebarButton(
+    text: String, icon: ImageVector, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit
+) {
+    val bg = if (selected) AppGreen.copy(alpha = 0.1f) else Color.Transparent
+    val contentColor = if (selected) AppGreen else Color.DarkGray
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .background(bg, RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = if (enabled) contentColor else Color.LightGray, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = if (enabled) contentColor else Color.LightGray)
+    }
+}
+
+@Composable
+private fun RightCheckoutPanel(
+    form: BillingFormState,
+    viewModel: BillingViewModel,
+    previousBalance: Double,
+    isPrinting: Boolean,
+    onPrint: () -> Unit,
+    onReset: () -> Unit
+) {
+    Column(
+        Modifier.width(360.dp).fillMaxHeight().background(Color(0xFFFAFAFA)).verticalScroll(rememberScrollState())
+    ) {
+        // Customer Section
+        Column(Modifier.padding(24.dp).fillMaxWidth()) {
+            Text("Customer Details", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = form.customer,
+                onValueChange = { form.customer = it },
+                label = { Text("Name", fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(6.dp),
+                enabled = !isPrinting,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = form.phone,
+                onValueChange = { form.phone = sanitizePhone(it) },
+                label = { Text("Phone", fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(6.dp),
+                enabled = !isPrinting,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (previousBalance > 0.0) {
+                Spacer(Modifier.height(8.dp))
+                Text("Old Pending: Rs ${formatMoney(previousBalance)}", color = Color(0xFFE65100), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+
+        HorizontalDivider(color = Color(0xFFE0E0E0))
+
+        // Financials
+        Column(Modifier.padding(24.dp).fillMaxWidth()) {
+            Text("Payment Details", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
+            Spacer(Modifier.height(12.dp))
+            FinancialAdjustmentsBlock(form, enabled = !isPrinting)
+            Spacer(Modifier.height(16.dp))
+            DisplayOptionsBlock(form, onOptionChange = { viewModel.setDisplayOption(it) })
+        }
+
+        HorizontalDivider(color = Color(0xFFE0E0E0))
+
+        // Totals & Action
+        Column(Modifier.padding(24.dp).fillMaxWidth()) {
+            AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
+            if (form.balance > 0.005) {
+                Spacer(Modifier.height(8.dp))
+                BalanceBanner(form.receivedValue, form.balance)
+            }
+            Spacer(Modifier.height(24.dp))
+
+            Button(
+                onClick = onPrint,
+                enabled = !isPrinting,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AppGreen)
+            ) {
+                Icon(Icons.Default.Print, null)
+                Spacer(Modifier.width(8.dp))
+                Text("PRINT & SAVE BILL", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onReset, enabled = !isPrinting, modifier = Modifier.fillMaxWidth()) {
+                Text("Reset All Fields", color = Color.Red, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+// ================== MOBILE UI COMPONENTS ==================
+
+@Composable
+private fun MobileHeaderBlock(
+    form: BillingFormState,
+    onOpenHistory: () -> Unit,
+    onOpenItemReport: () -> Unit,
+    onOpenManageItems: () -> Unit,
+    onOpenVendors: () -> Unit,
+    onOpenPurchases: () -> Unit,
+    onOpenBackupRestore: () -> Unit,
+    onLogout: () -> Unit,
+    userName: String,
+    isDeveloper: Boolean,
+    enabled: Boolean = true,
+    previousBalance: Double = 0.0,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = form.customer, onValueChange = { form.customer = it },
+            label = { Text("Customer Name") }, shape = RoundedCornerShape(10.dp),
+            leadingIcon = { Icon(Icons.Default.Person, null) }, singleLine = true,
+            enabled = enabled, modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = form.phone, onValueChange = { form.phone = sanitizePhone(it) },
+            label = { Text("Customer Number") }, shape = RoundedCornerShape(10.dp),
+            leadingIcon = { Icon(Icons.Default.Phone, null) }, singleLine = true,
+            enabled = enabled, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (previousBalance > 0.0) {
+            Text("Old Pending: Rs ${formatMoney(previousBalance)}", color = Color(0xFFE65100), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+        // Mobile Navigation buttons (Horizontal Scroll)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onOpenHistory, enabled = enabled) { Text("History", fontSize = 12.sp) }
+            OutlinedButton(onClick = onOpenVendors, enabled = enabled) { Text("Vendors", fontSize = 12.sp) }
+            OutlinedButton(onClick = onOpenPurchases, enabled = enabled) { Text("Purchases", fontSize = 12.sp) }
+            OutlinedButton(onClick = onOpenManageItems, enabled = enabled) { Text("Products", fontSize = 12.sp) }
+            OutlinedButton(onClick = onOpenItemReport, enabled = enabled) { Text("Reports", fontSize = 12.sp) }
+            if (isDeveloper) OutlinedButton(onClick = onOpenBackupRestore, enabled = enabled) { Text("Backup", fontSize = 12.sp) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Person, null, tint = AppGreen)
+            Spacer(Modifier.width(6.dp))
+            Text(userName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onLogout, enabled = enabled) { Text("Logout", color = Color.Red) }
+        }
+    }
+}
+
+@Composable
+private fun MobileActionBlock(
+    total: Double, summary: String, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
+            Text("Rs ${formatMoney(total)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(summary, fontSize = 9.sp, color = Color.Gray)
+        }
+        TextButton(onClick = onReset, enabled = enabled) { Text("Reset", color = Color.Red) }
+        Button(onClick = onPrint, enabled = enabled, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))) {
+            Text("PRINT", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+// ================== SHARED HELPER COMPOSABLES ==================
 
 @Composable
 private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) {
@@ -345,7 +625,7 @@ private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) 
             OutlinedTextField(
                 value = form.extraCharges,
                 onValueChange = { form.extraCharges = sanitizeDecimal(it) },
-                label = { Text("Extra/Misc (Rs)") },
+                label = { Text("Extra/Misc (Rs)", fontSize = 12.sp) },
                 singleLine = true,
                 enabled = enabled,
                 shape = RoundedCornerShape(10.dp),
@@ -374,209 +654,33 @@ private fun FinancialAdjustmentsBlock(form: BillingFormState, enabled: Boolean) 
     }
 }
 
+@Composable
+private fun DisplayOptionsBlock(form: BillingFormState, onOptionChange: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Invoice Display (Select One)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+        Text("Applies to all new invoices until you change it.", fontSize = 11.sp, color = Color.Gray)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showProduct, onClick = { onOptionChange("product") })
+                Text("Show Product Name", fontSize = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showCategory, onClick = { onOptionChange("category") })
+                Text("Show Category", fontSize = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showSubcategory, onClick = { onOptionChange("subcategory") })
+                Text("Show Subcategory", fontSize = 13.sp)
+            }
+        }
+    }
+}
+
 private fun LazyListScope.roomItems(
     form: BillingFormState, onAddItem: (RoomState) -> Unit, onDelete: (RoomState) -> Unit
 ) {
     itemsIndexed(items = form.rooms, key = { _, room -> room.id }) { index, room ->
         RoomCard(index, room, onAddItem = { onAddItem(room) }, onDelete = onDelete)
-    }
-}
-
-
-@Composable
-private fun DisplayOptionsBlock(form: BillingFormState) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Bill Display Options (Select One)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = form.showProduct, onClick = { form.showProduct = true; form.showCategory = false; form.showSubcategory = false })
-                Text("Show Product Name", fontSize = 12.sp)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = form.showCategory, onClick = { form.showProduct = false; form.showCategory = true; form.showSubcategory = false })
-                Text("Show Category", fontSize = 12.sp)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = form.showSubcategory, onClick = { form.showProduct = false; form.showCategory = false; form.showSubcategory = true })
-                Text("Show Subcategory", fontSize = 12.sp)
-            }
-        }
-    }
-}
-@Composable
-private fun HeaderBlock(
-    form: BillingFormState,
-    onOpenHistory: () -> Unit,
-    onOpenItemReport: () -> Unit,
-    onOpenManageItems: () -> Unit,
-    onOpenVendors: () -> Unit,          // ← NAYA
-    onOpenPurchases: () -> Unit,
-    onLogout: () -> Unit,
-    userName: String,
-    isDeveloper: Boolean,
-    enabled: Boolean = true,
-    previousBalance: Double = 0.0,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = form.customer,
-            onValueChange = { form.customer = it },
-            label = { Text("Customer Name") },
-            shape = RoundedCornerShape(10.dp),
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-            singleLine = true,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = form.phone,
-            onValueChange = { form.phone = sanitizePhone(it) },
-            label = { Text("Customer Number") },
-            supportingText = { Text("For another country use +code, e.g. +923012345678") },
-            shape = RoundedCornerShape(10.dp),
-            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
-            singleLine = true,
-            enabled = enabled,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (previousBalance > 0.0) {
-            Text(
-                "Old Pending: Rs ${formatMoney(previousBalance)}",
-                color = Color(0xFFE65100),
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-            )
-        }
-        Button(
-            onClick = { form.addRoom() },
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Add New Section", fontWeight = FontWeight.Bold)
-        }
-        OutlinedButton(
-            onClick = onOpenHistory,
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("History & Invoices", fontWeight = FontWeight.Bold)
-        }
-
-        OutlinedButton(
-            onClick = onOpenItemReport,
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Item Usage Report", fontWeight = FontWeight.Bold, color = AppGreen)
-        }
-        // ⬇️ TEXT BADLA: "Add New Items" → "Manage Products"
-        OutlinedButton(
-            onClick = onOpenManageItems,
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Manage Products", fontWeight = FontWeight.Bold, color = AppGreen)
-        }
-
-        // ========== NAYE 2 BUTTONS ==========
-        OutlinedButton(
-            onClick = onOpenVendors,
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Vendors", fontWeight = FontWeight.Bold, color = AppGreen)
-        }
-
-        OutlinedButton(
-            onClick = onOpenPurchases,
-            enabled = enabled,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Purchases", fontWeight = FontWeight.Bold, color = AppGreen)
-        }
-
-        HorizontalDivider(color = Color(0xFFEEEEEE))
-
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Person, contentDescription = null, tint = AppGreen)
-            Spacer(Modifier.width(6.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (isDeveloper) "Developer mode" else "Logged in",
-                    fontSize = 11.sp,
-                    color = if (isDeveloper) Color(0xFFE65100) else Color.Gray,
-                )
-                Text(userName, fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 13.sp)
-            }
-            val accent = if (isDeveloper) AppGreen else Color.Red
-            OutlinedButton(
-                onClick = onLogout,
-                enabled = enabled,
-                border = BorderStroke(1.dp, if (enabled) accent else Color.LightGray),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-            ) {
-                Text(if (isDeveloper) "Admin Panel" else "Logout", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActionBlock(
-    total: Double, summary: String, compact: Boolean, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit
-) {
-    if (compact) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
-                Text("Rs ${formatMoney(total)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(summary, fontSize = 9.sp, color = Color.Gray)
-            }
-            TextButton(onClick = onReset, enabled = enabled) { Text("Reset", color = Color.Red) }
-            Button(
-                onClick = onPrint,
-                enabled = enabled,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))
-            ) {
-                Text("PRINT", fontWeight = FontWeight.Bold)
-            }
-        }
-    } else {
-        Column(
-            Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TotalCard(total)
-            Text(summary, fontSize = 12.sp, color = Color.Gray)
-            Button(
-                onClick = onPrint,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))
-            ) {
-                Text("PRINT & SAVE BILL", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-            TextButton(onClick = onReset, enabled = enabled) { Text("Reset All Fields", color = Color.Red) }
-        }
     }
 }
 
@@ -699,7 +803,6 @@ private fun validateForm(form: BillingFormState): Pair<String, String>? {
     if (form.phone.isBlank()) return "Missing Data" to "Customer Number is required"
     if (!form.hasAnyItem) return "Missing Data" to "Enter the quantity and rate for at least one item."
 
-    // Yahan check karte hain aur room/item ka naam dhund kar batate hain
     for (room in form.rooms) {
         for (item in room.items) {
             if (item.isIncomplete) {

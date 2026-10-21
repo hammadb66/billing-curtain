@@ -1,27 +1,10 @@
 package com.example.billing.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,10 +17,10 @@ import com.example.billing.sync.SyncStatus
 import kotlinx.coroutines.launch
 
 private fun SyncStatus.label(): String = when (this) {
-    SyncStatus.Disabled -> "Offline: The data is only on this laptop."
+    SyncStatus.Disabled -> "Offline: Data is only on this laptop."
     SyncStatus.Syncing -> "Syncing..."
-    SyncStatus.Synced -> "Online: Everything is equal with the firebase."
-    is SyncStatus.Waiting -> "Online: $pending Change yet to be sent ($reason). It will happen automatically once the internet comes on."
+    SyncStatus.Synced -> "Online: Everything is synced with Firebase."
+    is SyncStatus.Waiting -> "Online: $pending change(s) pending ($reason)."
 }
 
 private fun SyncStatus.color(): Color = when (this) {
@@ -47,7 +30,6 @@ private fun SyncStatus.color(): Color = when (this) {
     is SyncStatus.Waiting -> Color(0xFFE65100)
 }
 
-/** Chhota status (Billing / History screen ke upar lagane ke liye). */
 @Composable
 fun SyncStatusChip(services: AppServices, modifier: Modifier = Modifier) {
     val status by services.sync.status.collectAsState()
@@ -60,7 +42,6 @@ fun SyncStatusChip(services: AppServices, modifier: Modifier = Modifier) {
     Text(text, color = status.color(), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = modifier)
 }
 
-/** Admin Panel ka ONLINE / OFFLINE switch. AdminScreen ke Column me bas `SyncPanel(services)` likh den. */
 @Composable
 fun SyncPanel(services: AppServices) {
     val scope = rememberCoroutineScope()
@@ -72,79 +53,66 @@ fun SyncPanel(services: AppServices) {
     var foreignShop by remember { mutableStateOf<String?>(null) }
     val notice by services.sync.notice.collectAsState()
 
-    // Status badalte hi switch bhi theek kar do (maslan shop code badalne par sync khud offline ho jata hai)
     LaunchedEffect(status) { online = services.sync.isOnlineMode() }
 
     fun enable(confirmForeign: Boolean) {
         scope.launch {
-            busy = true
-            message = null
+            busy = true; message = null
             when (val r = services.sync.enableOnline(confirmForeign)) {
-                is EnableResult.Success -> message = r.note ?: "Went online. Data synced with Firebase."
+                is EnableResult.Success -> message = r.note ?: "Went online. Data synced."
                 is EnableResult.Error -> message = r.message
                 is EnableResult.NeedsConfirm -> foreignShop = r.oldShop
             }
-            online = services.sync.isOnlineMode()
-            busy = false
+            online = services.sync.isOnlineMode(); busy = false
         }
     }
 
     fun toggle(on: Boolean) {
         if (busy) return
-        if (on) {
-            enable(confirmForeign = false)
-            return
-        }
+        if (on) { enable(confirmForeign = false); return }
         scope.launch {
-            busy = true
-            message = null
+            busy = true; message = null
             val err = services.sync.disableOnline()
-            if (err != null) forceOfflineReason = err else message = "Went offline. The new data from Firebase has arrived locally."
-            online = services.sync.isOnlineMode()
-            busy = false
+            if (err != null) forceOfflineReason = err else message = "Went offline. Data downloaded."
+            online = services.sync.isOnlineMode(); busy = false
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = Color.White,
-        shadowElevation = 2.dp,
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Online Sync (Firebase)", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = AppGreen)
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Online Sync (Firebase)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (online) "ONLINE" else "OFFLINE", fontWeight = FontWeight.Bold, color = if (online) AppGreen else Color.Gray)
+                    Text(if (online) "ONLINE" else "OFFLINE", fontWeight = FontWeight.Bold, color = if (online) AppGreen else Color.Gray, fontSize = 15.sp)
                     Text(status.label(), fontSize = 12.sp, color = status.color())
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = AppGreen)
-                Switch(checked = online, enabled = !busy, onCheckedChange = { toggle(it) })
+                Switch(
+                    checked = online, enabled = !busy, onCheckedChange = { toggle(it) },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppGreen)
+                )
             }
             message?.let { Text(it, fontSize = 13.sp, color = Color.DarkGray) }
             notice?.let {
                 Text(it, fontSize = 13.sp, color = Color(0xFFE65100))
-                TextButton(onClick = { services.sync.clearNotice() }) { Text("OK") }
+                TextButton(onClick = { services.sync.clearNotice() }) { Text("OK", color = Color(0xFFE65100)) }
             }
             if (online) {
                 OutlinedButton(
                     enabled = !busy,
-                    onClick = {
-                        scope.launch {
-                            busy = true
-                            message = services.sync.syncNow() ?: "Sync complete."
-                            busy = false
-                        }
-                    },
-                ) { Text("Sync Now") }
+                    onClick = { scope.launch { busy = true; message = services.sync.syncNow() ?: "Sync complete."; busy = false } },
+                    shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+                ) { Text("Sync Now", color = Color(0xFF2C3E50)) }
             }
             Text(
-                "When TURNED ON: Old data from this laptop is sent to Firebase, and data from Firebase is brought here. " +
-                        "Then, every new, edited, or deleted bill is saved online (if offline, saved locally first, then auto-uploaded when back online). " +
-                        "New data from Firebase updates when a bill is created, when the app opens, and on History Refresh. " +
-                        "When TURNED OFF: All Firebase data is downloaded locally and runs offline.",
-                fontSize = 12.sp,
-                color = Color.Gray,
+                "When TURNED ON: Old data from this laptop is sent to Firebase, and data from Firebase is brought here. Then, every new, edited, or deleted bill is saved online.",
+                fontSize = 12.sp, color = Color.Gray,
             )
         }
     }
@@ -152,41 +120,37 @@ fun SyncPanel(services: AppServices) {
     foreignShop?.let { old ->
         AlertDialog(
             onDismissRequest = { foreignShop = null },
-            title = { Text("Previous Shop Data") },
-            text = {
-                Text(
-                    "This laptop contains data for shop '$old', but the shop code is different now. " +
-                            "Going online will move all these bills to the NEW shop.\n\n" +
-                            "If this data does not belong to the new shop, please click Cancel."
-                )
-            },
+            title = { Text("Previous Shop Data", fontWeight = FontWeight.Bold) },
+            text = { Text("This laptop contains data for shop '$old', but the shop code is different now. Going online will move all these bills to the NEW shop.\n\nIf this data does not belong to the new shop, please click Cancel.") },
             confirmButton = {
-                TextButton(onClick = { foreignShop = null; enable(confirmForeign = true) }) {
-                    Text("Yes, Send it to new Shop", color = Color.Red)
-                }
+                Button(
+                    onClick = { foreignShop = null; enable(confirmForeign = true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    shape = RoundedCornerShape(6.dp)
+                ) { Text("Yes, Send to New Shop", fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { foreignShop = null }) { Text("Cancel") } },
+            shape = RoundedCornerShape(8.dp), containerColor = Color.White
         )
     }
 
     forceOfflineReason?.let { reason ->
         AlertDialog(
             onDismissRequest = { forceOfflineReason = null },
-            title = { Text("Could Not Switch Offline") },
+            title = { Text("Could Not Switch Offline", fontWeight = FontWeight.Bold) },
             text = { Text("$reason\n\nForce offline anyway? New data from Firebase will not be saved locally.") },
             confirmButton = {
-                TextButton(onClick = {
-                    forceOfflineReason = null
-                    scope.launch {
-                        busy = true
-                        services.sync.disableOnline(force = true)
-                        online = services.sync.isOnlineMode()
-                        message = "Switched to offline (forced)."
-                        busy = false
-                    }
-                }) { Text("Force Offline Anyway", color = Color.Red) }
+                Button(
+                    onClick = {
+                        forceOfflineReason = null
+                        scope.launch { busy = true; services.sync.disableOnline(force = true); online = services.sync.isOnlineMode(); message = "Switched to offline (forced)."; busy = false }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    shape = RoundedCornerShape(6.dp)
+                ) { Text("Force Offline", fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { forceOfflineReason = null }) { Text("Cancel") } },
+            shape = RoundedCornerShape(8.dp), containerColor = Color.White
         )
     }
 }

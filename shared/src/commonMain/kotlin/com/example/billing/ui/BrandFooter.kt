@@ -2,7 +2,9 @@ package com.example.billing.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -16,10 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.billing.utils.Branding
 
-/**
- * "Licensed to / Developed by / Contact" wali chhoti patti.
- * Contact number par mouse se select kar ke copy kiya ja sakta hai.
- */
 @Composable
 fun BrandFooter(modifier: Modifier = Modifier, centered: Boolean = false) {
     val align = if (centered) Alignment.CenterHorizontally else Alignment.Start
@@ -30,12 +28,13 @@ fun BrandFooter(modifier: Modifier = Modifier, centered: Boolean = false) {
         horizontalAlignment = align,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        HorizontalDivider()
+        HorizontalDivider(color = Color(0xFFE0E0E0))
+        Spacer(Modifier.height(4.dp))
         if (Branding.licensedTo.isNotBlank()) {
             Text(
                 "Licensed to: ${Branding.licensedTo}",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
                 color = AppGreen,
                 textAlign = textAlign,
             )

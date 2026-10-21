@@ -96,7 +96,7 @@ class BillingFormState {
     var discount by mutableStateOf("")
 
     // NEW: display checkboxes
-    var showProduct by mutableStateOf(false)
+    var showProduct by mutableStateOf(true)
     var showCategory by mutableStateOf(false)
     var showSubcategory by mutableStateOf(false)
     var discountIsPercent by mutableStateOf(false)   // false = Rs, true = %
@@ -135,9 +135,6 @@ class BillingFormState {
         received = ""
         rooms.clear()
         rooms.add(RoomState())
-        showProduct = false
-        showCategory = false
-        showSubcategory = false
     }
 
     fun toRoomDataList(): List<RoomData> = rooms.map { it.toRoomData() }.filter { it.items.isNotEmpty() }

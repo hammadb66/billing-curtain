@@ -83,8 +83,14 @@ fun App(
                 services.license.activate(presetShopCode)
             }
             when (val s = services.license.evaluate()) {
-                LicenseState.NeedActivation -> { licensed = false; gate = Gate.NeedActivation }
-                is LicenseState.Blocked -> { licensed = false; gate = Gate.Blocked(s.message) }
+                LicenseState.NeedActivation -> {
+                    licensed = false; gate = Gate.NeedActivation
+                }
+
+                is LicenseState.Blocked -> {
+                    licensed = false; gate = Gate.Blocked(s.message)
+                }
+
                 is LicenseState.Allowed -> {
                     offline = s.offline
                     licensed = true
@@ -169,7 +175,7 @@ fun App(
                                     repository = services.vendors,
                                     vendorId = route.vendorId,
                                     onBack = { navController.popBackStack() },
-                                    printer=printer
+                                    printer = printer
                                 )
                             }
                             composable<BillingRoute.Products> {
@@ -207,7 +213,9 @@ fun App(
                                     onOpenVendors = { navController.navigate(BillingRoute.Vendors) },       // ← NAYA
                                     onOpenPurchases = { navController.navigate(BillingRoute.Purchases) },   // ← NAYA                                    onOpenItemReport = { navController.navigate(BillingRoute.ItemReport) },
                                     userName = g.user.username,
-                                    isDeveloper = g.dev != null
+                                    isDeveloper = g.dev != null,
+                                    exporter = exporter,   // <-- NAYA
+                                    importer = importer    // <-- NAYA
                                 )
                             }
 

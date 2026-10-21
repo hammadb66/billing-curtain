@@ -1,5 +1,8 @@
 package com.example.billing.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -8,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -15,7 +19,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -23,25 +30,21 @@ import androidx.compose.ui.unit.sp
 import com.example.billing.data.VendorRepository
 import com.example.billing.model.*
 import com.example.billing.utils.PlatformBackHandler
-import com.example.billing.utils.formatMoney
 import com.example.billing.utils.sanitizeDecimal
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class InventoryTab { PRODUCTS, CATEGORIES, SUBCATEGORIES }
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ProductListScreen(repository: VendorRepository, onBack: () -> Unit) {
     PlatformBackHandler { onBack() }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var tab by remember { mutableIntStateOf(0) }
-
+    var tab by remember { mutableStateOf(InventoryTab.PRODUCTS) }
     var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
     var subcategories by remember { mutableStateOf<List<Subcategory>>(emptyList()) }
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
-
-    var editingProduct by remember { mutableStateOf<Product?>(null) }
-    var showProductDialog by remember { mutableStateOf(false) }
-    var productToDelete by remember { mutableStateOf<Product?>(null) }
 
     suspend fun reload() {
         categories = repository.listCategories()
@@ -52,239 +55,469 @@ fun ProductListScreen(repository: VendorRepository, onBack: () -> Unit) {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Inventory", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
-            )
-        },
-        floatingActionButton = {
-            if (tab == 0) FloatingActionButton(
-                onClick = { editingProduct = null; showProductDialog = true },
-                containerColor = AppGreen,
-            ) { Icon(Icons.Default.Add, null, tint = Color.White) }
-        },
-        containerColor = Color(0xFFF4F6F8),
+        containerColor = Color(0xFFF4F5F7), // Desktop background
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab, containerColor = Color.White) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Products (${products.size})") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Categories (${categories.size})") })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Subcategories") })
+
+            // ================== CUSTOM DESKTOP HEADER ==================
+            Surface(color = Color.White, shadowElevation = 1.dp) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text("Inventory Management", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
+                    }
+
+                    TabRow(
+                        selectedTabIndex = tab.ordinal,
+                        containerColor = Color.White,
+                        contentColor = AppGreen,
+                        divider = { HorizontalDivider(color = Color(0xFFE0E0E0)) }
+                    ) {
+                        Tab(
+                            selected = tab == InventoryTab.PRODUCTS,
+                            onClick = { tab = InventoryTab.PRODUCTS },
+                            text = { Text("Products (${products.size})", fontWeight = FontWeight.SemiBold) }
+                        )
+                        Tab(
+                            selected = tab == InventoryTab.CATEGORIES,
+                            onClick = { tab = InventoryTab.CATEGORIES },
+                            text = { Text("Categories (${categories.size})", fontWeight = FontWeight.SemiBold) }
+                        )
+                        Tab(
+                            selected = tab == InventoryTab.SUBCATEGORIES,
+                            onClick = { tab = InventoryTab.SUBCATEGORIES },
+                            text = { Text("Subcategories", fontWeight = FontWeight.SemiBold) }
+                        )
+                    }
+                }
             }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+
+            // ================== MAIN CONTENT ==================
+            Box(Modifier.weight(1f)) {
                 when (tab) {
-                    0 -> ProductsTab(products, onEdit = { editingProduct = it; showProductDialog = true },
-                        onDelete = { productToDelete = it })
-                    1 -> CategoriesTab(categories,
-                        onAdd = { name -> val err = repository.addCategory(name); if (err != null) snackbar.showSnackbar(err); reload() },
-                        onUpdate = { id, name -> val err = repository.updateCategory(id, name); if (err != null) snackbar.showSnackbar(err); reload() },
-                        onDelete = { id ->
-                            scope.launch {
-                                val productsUsingCat = products.any { it.categoryId == id }
-                                if (productsUsingCat) {
-                                    snackbar.showSnackbar("Cannot delete! Products exist in this category.")
-                                } else {
-                                    repository.deleteCategory(id)
-                                    reload()
-                                }
-                            }
-                        })
-                    2 -> SubcategoriesTab(categories, subcategories,
-                        onAdd = { cid, name -> val err = repository.addSubcategory(cid, name); if (err != null) snackbar.showSnackbar(err); reload() },
-                        onUpdate = { id, name -> val err = repository.updateSubcategory(id, name); if (err != null) snackbar.showSnackbar(err); reload() },
-                        onDelete = { id ->
-                            scope.launch {
-                                val productsUsingSub = products.any { it.subcategoryId == id }
-                                if (productsUsingSub) {
-                                    snackbar.showSnackbar("Cannot delete! Products exist in this subcategory.")
-                                } else {
-                                    repository.deleteSubcategory(id)
-                                    reload()
-                                }
-                            }
-                        })
-                }
-            }
-        }
-    }
-
-    if (showProductDialog) {
-        ProductEditDialog(
-            initial = editingProduct,
-            categories = categories,
-            subcategories = subcategories,
-            onSave = { p ->
-                if (p.id == 0L) repository.addProduct(p) else repository.updateProduct(p)
-                reload()
-            },
-            onDismiss = { showProductDialog = false; editingProduct = null },
-        )
-    }
-
-    productToDelete?.let { p ->
-        ConfirmDialog("Delete Product", "Delete \"${p.name}\"?", "Delete", {
-            scope.launch {
-                if (repository.isProductUsedInAnyBill(p.id)) {
-                    snackbar.showSnackbar("Cannot delete! This product is used in bills.")
-                } else {
-                    repository.deleteProduct(p.id)
-                    reload()
-                }
-                productToDelete = null
-            }
-        }, { productToDelete = null })
-    }
-}
-
-@Composable
-private fun ProductsTab(products: List<Product>, onEdit: (Product) -> Unit, onDelete: (Product) -> Unit) {
-    if (products.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No product yet.", color = Color.Gray) }
-        return
-    }
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(products, key = { it.id }) { p ->
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(10.dp)) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        val sub = listOfNotNull(p.categoryName.takeIf { it.isNotBlank() }, p.subcategoryName.takeIf { it.isNotBlank() }).joinToString(" › ")
-                        if (sub.isNotBlank()) Text(sub, fontSize = 11.sp, color = Color.Gray)
-                        Text("Sale: Rs ${formatMoney(p.salePrice)} • Cost: Rs ${formatMoney(p.price)} • Stock: ${formatMoney(p.liveStock ?: p.openingStock)} ${p.unit}",
-                            fontSize = 12.sp, color = Color.DarkGray)
-                    }
-                    IconButton(onClick = { onEdit(p) }) { Icon(Icons.Default.Edit, "Edit", tint = Color(0xFF1565C0)) }
-                    IconButton(onClick = { onDelete(p) }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
+                    InventoryTab.PRODUCTS -> ProductsTabSplit(
+                        repository = repository,
+                        products = products,
+                        categories = categories,
+                        subcategories = subcategories,
+                        onReload = { scope.launch { reload() } },
+                        snackbar = snackbar
+                    )
+                    InventoryTab.CATEGORIES -> CategoriesTabSplit(
+                        repository = repository,
+                        categories = categories,
+                        products = products,
+                        onReload = { scope.launch { reload() } },
+                        snackbar = snackbar
+                    )
+                    InventoryTab.SUBCATEGORIES -> SubcategoriesTabSplit(
+                        repository = repository,
+                        categories = categories,
+                        subcategories = subcategories,
+                        products = products,
+                        onReload = { scope.launch { reload() } },
+                        snackbar = snackbar
+                    )
                 }
             }
         }
     }
 }
 
+// ======================= PRODUCTS TAB =======================
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CategoriesTab(
-    categories: List<Category>,
-    onAdd: suspend (String) -> Unit,
-    onUpdate: suspend (Long, String) -> Unit,
-    onDelete: (Long) -> Unit
-) {
-    var text by remember { mutableStateOf("") }
-    var editingCat by remember { mutableStateOf<Category?>(null) }
-    val scope = rememberCoroutineScope()
-
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                text, { text = it },
-                label = { Text(if (editingCat == null) "New Category" else "Edit Category") },
-                singleLine = true, modifier = Modifier.weight(1f)
-            )
-            Button(onClick = {
-                if (text.isNotBlank()) {
-                    scope.launch {
-                        if (editingCat == null) onAdd(text) else onUpdate(editingCat!!.id, text)
-                        text = ""; editingCat = null
-                    }
-                }
-            }, modifier = Modifier.height(56.dp)) {
-                Text(if (editingCat == null) "Add" else "Update")
-            }
-            if (editingCat != null) {
-                TextButton(onClick = { editingCat = null; text = "" }, modifier = Modifier.height(56.dp)) {
-                    Text("Cancel", color = Color.Red)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(categories, key = { it.id }) { c ->
-                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(c.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        IconButton(onClick = { editingCat = c; text = c.name }) {
-                            Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(18.dp), tint = Color(0xFF1565C0))
-                        }
-                        IconButton(onClick = { onDelete(c.id) }) {
-                            Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(18.dp), tint = Color.Red)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SubcategoriesTab(
+private fun ProductsTabSplit(
+    repository: VendorRepository,
+    products: List<Product>,
     categories: List<Category>,
     subcategories: List<Subcategory>,
-    onAdd: suspend (Long, String) -> Unit,
-    onUpdate: suspend (Long, String) -> Unit,
-    onDelete: (Long) -> Unit
+    onReload: () -> Unit,
+    snackbar: SnackbarHostState
 ) {
-    var selectedCatId by remember { mutableStateOf<Long?>(categories.firstOrNull()?.id) }
-    var text by remember { mutableStateOf("") }
-    var editingSub by remember { mutableStateOf<Subcategory?>(null) }
     val scope = rememberCoroutineScope()
-    val filtered = subcategories.filter { it.categoryId == selectedCatId }
+    var query by remember { mutableStateOf("") }
+    var selectedProduct by remember { mutableStateOf<Product?>(null) }
+    var isNew by remember { mutableStateOf(false) }
+    var isLocked by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
-    LaunchedEffect(categories) {
-        if (selectedCatId == null || categories.none { it.id == selectedCatId }) {
-            selectedCatId = categories.firstOrNull()?.id
+    // --- FORM STATES ---
+    var formName by remember { mutableStateOf("") }
+    var formCatId by remember { mutableStateOf<Long?>(null) }
+    var formSubId by remember { mutableStateOf<Long?>(null) }
+    var formPrice by remember { mutableStateOf("") }
+    var formSalePrice by remember { mutableStateOf("") }
+    var formStock by remember { mutableStateOf("") }
+    var formUnit by remember { mutableStateOf("pcs") }
+
+    fun showSnack(msg: String) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(msg)
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        OutlinedTextField(
-            value = categories.firstOrNull { it.id == selectedCatId }?.name ?: "",
-            onValueChange = {},
-            readOnly = true, label = { Text("Category") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            categories.forEach { c ->
-                FilterChip(selected = c.id == selectedCatId, onClick = { selectedCatId = c.id; editingSub = null; text = "" }, label = { Text(c.name) })
-            }
-        }
-        Spacer(Modifier.height(8.dp))
+    fun clearForm() {
+        formName = ""
+        formCatId = null
+        formSubId = null
+        formPrice = ""
+        formSalePrice = ""
+        formStock = ""
+        formUnit = "pcs"
+    }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                text, { text = it },
-                label = { Text(if (editingSub == null) "New Subcategory" else "Edit Subcategory") },
-                singleLine = true, modifier = Modifier.weight(1f)
-            )
-            Button(onClick = {
-                if (text.isNotBlank() && selectedCatId != null) {
-                    scope.launch {
-                        if (editingSub == null) onAdd(selectedCatId!!, text) else onUpdate(editingSub!!.id, text)
-                        text = ""; editingSub = null
+    LaunchedEffect(selectedProduct) {
+        if (selectedProduct != null) {
+            val p = selectedProduct!!
+            formName = p.name
+            formCatId = p.categoryId
+            formSubId = p.subcategoryId
+            formPrice = p.price.toString()
+            formSalePrice = p.salePrice.toString()
+            formStock = p.openingStock.toString()
+            formUnit = p.unit
+        }
+    }
+
+    val listFocus = remember { FocusRequester() }
+    val nameFocus = remember { FocusRequester() }
+    val filtered = products.filter { query.isBlank() || it.name.contains(query, true) }
+
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+            if (event.isCtrlPressed && event.key == Key.W && event.type == KeyEventType.KeyDown) {
+                listFocus.requestFocus()
+                true
+            } else false
+        }
+    ) {
+        Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+
+            // LEFT: LIST PANEL
+            Card(
+                Modifier.weight(1f).fillMaxHeight().focusRequester(listFocus),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        placeholder = { Text("Search product...", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp), tint = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        singleLine = true,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    Button(
+                        onClick = {
+                            selectedProduct = null
+                            isNew = true
+                            clearForm()
+                            scope.launch {
+                                kotlinx.coroutines.delay(100)
+                                nameFocus.requestFocus()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(40.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add New Product", fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFFE0E0E0))
+
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(filtered, key = { it.id }) { p ->
+                            val isSelected = selectedProduct?.id == p.id && !isNew
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(if (isSelected) AppGreen.copy(alpha = 0.08f) else Color.Transparent)
+                                    .clickable {
+                                        selectedProduct = p
+                                        isNew = false
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        p.name,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 14.sp,
+                                        color = if (isSelected) AppGreen else Color(0xFF1E293B)
+                                    )
+                                    val sub = listOfNotNull(p.categoryName.takeIf { it.isNotBlank() }, p.subcategoryName.takeIf { it.isNotBlank() }).joinToString(" › ")
+                                    if (sub.isNotBlank()) Text(sub, fontSize = 11.sp, color = Color.Gray)
+                                }
+                            }
+                            HorizontalDivider(color = Color(0xFFF1F5F9))
+                        }
                     }
                 }
-            }, enabled = selectedCatId != null, modifier = Modifier.height(56.dp)) {
-                Text(if (editingSub == null) "Add" else "Update")
             }
-            if (editingSub != null) {
-                TextButton(onClick = { editingSub = null; text = "" }, modifier = Modifier.height(56.dp)) {
-                    Text("Cancel", color = Color.Red)
+
+            // RIGHT: FORM PANEL
+            Card(
+                Modifier.weight(1.5f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                val showForm = selectedProduct != null || isNew
+                if (!showForm) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Inventory, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("Select a product from the list or add a new one.", color = Color.Gray, fontSize = 15.sp)
+                        }
+                    }
+                } else {
+                    ProductForm(
+                        initial = selectedProduct,
+                        categories = categories,
+                        subcategories = subcategories,
+                        isLocked = isLocked,
+                        onLockChange = { isLocked = it },
+                        isSaving = isSaving,
+                        nameFocus = nameFocus,
+                        name = formName, onNameChange = { formName = it },
+                        categoryId = formCatId, onCategoryChange = { formCatId = it },
+                        subcategoryId = formSubId, onSubcategoryChange = { formSubId = it },
+                        price = formPrice, onPriceChange = { formPrice = it },
+                        salePrice = formSalePrice, onSalePriceChange = { formSalePrice = it },
+                        openingStock = formStock, onStockChange = { formStock = it },
+                        unit = formUnit, onUnitChange = { formUnit = it },
+
+                        onSave = { p, lock ->
+                            if (isSaving) return@ProductForm
+                            isSaving = true
+                            scope.launch {
+                                try {
+                                    val err = if (p.id == 0L) repository.addProduct(p) else repository.updateProduct(p)
+                                    if (err != null) {
+                                        showSnack(err)
+                                    } else {
+                                        if (!lock) {
+                                            selectedProduct = null
+                                            isNew = false
+                                            clearForm()
+                                        } else {
+                                            selectedProduct = null
+                                            isNew = true
+                                        }
+                                        onReload()
+                                        showSnack("Saved successfully!")
+                                    }
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        },
+                        onDelete = {
+                            if (isSaving) return@ProductForm
+                            isSaving = true
+                            scope.launch {
+                                try {
+                                    val pid = selectedProduct!!.id
+                                    if (repository.isProductUsedInAnyBill(pid)) {
+                                        showSnack("Cannot delete! This product is used in bills.")
+                                    } else {
+                                        repository.deleteProduct(pid)
+                                        selectedProduct = null
+                                        isNew = false
+                                        clearForm()
+                                        onReload()
+                                        showSnack("Deleted.")
+                                    }
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(filtered, key = { it.id }) { s ->
-                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(s.name, Modifier.weight(1f))
-                        IconButton(onClick = { editingSub = s; text = s.name }) {
-                            Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(18.dp), tint = Color(0xFF1565C0))
+// ======================= CATEGORIES TAB =======================
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CategoriesTabSplit(
+    repository: VendorRepository,
+    categories: List<Category>,
+    products: List<Product>,
+    onReload: () -> Unit,
+    snackbar: SnackbarHostState
+) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<Category?>(null) }
+    var text by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+
+    fun showSnack(msg: String) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(msg)
+        }
+    }
+
+    val listFocus = remember { FocusRequester() }
+    val filtered = categories.filter { query.isBlank() || it.name.contains(query, true) }
+
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+            if (event.isCtrlPressed && event.key == Key.W && event.type == KeyEventType.KeyDown) {
+                listFocus.requestFocus(); true
+            } else false
+        }
+    ) {
+        Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // LEFT PANEL
+            Card(
+                Modifier.weight(1f).fillMaxHeight().focusRequester(listFocus),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        placeholder = { Text("Search category...", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp), tint = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        singleLine = true,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    Button(
+                        onClick = { selected = null; text = "" },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(40.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add New Category", fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFFE0E0E0))
+
+                    LazyColumn {
+                        items(filtered, key = { it.id }) { c ->
+                            val isSelected = selected?.id == c.id
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(if (isSelected) AppGreen.copy(alpha = 0.08f) else Color.Transparent)
+                                    .clickable { selected = c; text = c.name }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                            ) {
+                                Text(
+                                    c.name,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) AppGreen else Color(0xFF1E293B)
+                                )
+                            }
+                            HorizontalDivider(color = Color(0xFFF1F5F9))
                         }
-                        IconButton(onClick = { onDelete(s.id) }) {
-                            Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(18.dp), tint = Color.Red)
+                    }
+                }
+            }
+
+            // RIGHT PANEL
+            Card(
+                Modifier.weight(1.5f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(if (selected == null) "New Category Details" else "Edit Category Details", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF2C3E50))
+                    OutlinedTextField(
+                        text, { text = it },
+                        label = { Text("Category Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isSaving,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            enabled = !isSaving && text.isNotBlank(),
+                            onClick = {
+                                if (isSaving) return@Button
+                                isSaving = true
+                                scope.launch {
+                                    try {
+                                        val err = if (selected == null) repository.addCategory(text) else repository.updateCategory(selected!!.id, text)
+                                        if (err != null) {
+                                            showSnack(err)
+                                        } else {
+                                            text = ""
+                                            selected = null
+                                            onReload()
+                                            showSnack("Saved!")
+                                        }
+                                    } finally {
+                                        isSaving = false
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.height(44.dp)
+                        ) {
+                            if (isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Text("Save Category", fontWeight = FontWeight.Bold)
+                        }
+                        if (selected != null) {
+                            OutlinedButton(
+                                enabled = !isSaving,
+                                onClick = {
+                                    if (isSaving) return@OutlinedButton
+                                    isSaving = true
+                                    scope.launch {
+                                        try {
+                                            val cat = selected!!
+                                            val inUse = products.any { it.categoryId == cat.id }
+                                            if (inUse) {
+                                                showSnack("Cannot delete! Products exist in this category.")
+                                            } else {
+                                                repository.deleteCategory(cat.id)
+                                                text = ""
+                                                selected = null
+                                                onReload()
+                                                showSnack("Deleted")
+                                            }
+                                        } finally {
+                                            isSaving = false
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                                border = BorderStroke(1.dp, Color.Red),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.height(44.dp)
+                            ) { Text("Delete Category", fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
@@ -293,84 +526,418 @@ private fun SubcategoriesTab(
     }
 }
 
+// ======================= SUBCATEGORIES TAB =======================
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ProductEditDialog(
+private fun SubcategoriesTabSplit(
+    repository: VendorRepository,
+    categories: List<Category>,
+    subcategories: List<Subcategory>,
+    products: List<Product>,
+    onReload: () -> Unit,
+    snackbar: SnackbarHostState
+) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var selectedCatId by remember { mutableStateOf<Long?>(categories.firstOrNull()?.id) }
+    var selectedSub by remember { mutableStateOf<Subcategory?>(null) }
+    var text by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+
+    fun showSnack(msg: String) {
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(msg)
+        }
+    }
+
+    val listFocus = remember { FocusRequester() }
+
+    val filtered = subcategories.filter {
+        it.categoryId == selectedCatId && (query.isBlank() || it.name.contains(query, true))
+    }
+
+    Box(
+        Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+            if (event.isCtrlPressed && event.key == Key.W && event.type == KeyEventType.KeyDown) {
+                listFocus.requestFocus(); true
+            } else false
+        }
+    ) {
+        Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // LEFT PANEL
+            Card(
+                Modifier.weight(1f).fillMaxHeight().focusRequester(listFocus),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        categories.forEach { c ->
+                            FilterChip(
+                                selected = c.id == selectedCatId,
+                                onClick = { selectedCatId = c.id; selectedSub = null; text = "" },
+                                label = { Text(c.name) },
+                                shape = RoundedCornerShape(6.dp)
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        placeholder = { Text("Search subcategory...", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp), tint = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        singleLine = true,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { selectedSub = null; text = "" },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(40.dp),
+                        enabled = selectedCatId != null,
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Subcategory", fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFFE0E0E0))
+
+                    LazyColumn {
+                        items(filtered, key = { it.id }) { s ->
+                            val isSelected = selectedSub?.id == s.id
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(if (isSelected) AppGreen.copy(alpha = 0.08f) else Color.Transparent)
+                                    .clickable { selectedSub = s; text = s.name }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                            ) {
+                                Text(
+                                    s.name,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) AppGreen else Color(0xFF1E293B)
+                                )
+                            }
+                            HorizontalDivider(color = Color(0xFFF1F5F9))
+                        }
+                    }
+                }
+            }
+
+            // RIGHT PANEL
+            Card(
+                Modifier.weight(1.5f).fillMaxHeight(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(if (selectedSub == null) "New Subcategory Details" else "Edit Subcategory Details", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF2C3E50))
+                    OutlinedTextField(
+                        text, { text = it },
+                        label = { Text("Subcategory Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedCatId != null && !isSaving,
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            enabled = !isSaving && text.isNotBlank() && selectedCatId != null,
+                            onClick = {
+                                if (isSaving) return@Button
+                                isSaving = true
+                                scope.launch {
+                                    try {
+                                        val err = if (selectedSub == null) repository.addSubcategory(selectedCatId!!, text) else repository.updateSubcategory(selectedSub!!.id, text)
+                                        if (err != null) {
+                                            showSnack(err)
+                                        } else {
+                                            text = ""
+                                            selectedSub = null
+                                            onReload()
+                                            showSnack("Saved!")
+                                        }
+                                    } finally {
+                                        isSaving = false
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.height(44.dp)
+                        ) {
+                            if (isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Text("Save Subcategory", fontWeight = FontWeight.Bold)
+                        }
+                        if (selectedSub != null) {
+                            OutlinedButton(
+                                enabled = !isSaving,
+                                onClick = {
+                                    if (isSaving) return@OutlinedButton
+                                    isSaving = true
+                                    scope.launch {
+                                        try {
+                                            val sub = selectedSub!!
+                                            val inUse = products.any { it.subcategoryId == sub.id }
+                                            if (inUse) {
+                                                showSnack("Cannot delete! Products exist here.")
+                                            } else {
+                                                repository.deleteSubcategory(sub.id)
+                                                text = ""
+                                                selectedSub = null
+                                                onReload()
+                                                showSnack("Deleted")
+                                            }
+                                        } finally {
+                                            isSaving = false
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                                border = BorderStroke(1.dp, Color.Red),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.height(44.dp)
+                            ) { Text("Delete", fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ======================= PRODUCT FORM =======================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProductForm(
     initial: Product?,
     categories: List<Category>,
     subcategories: List<Subcategory>,
-    onSave: suspend (Product) -> Unit,
-    onDismiss: () -> Unit,
+    isLocked: Boolean,
+    onLockChange: (Boolean) -> Unit,
+    isSaving: Boolean,
+    nameFocus: FocusRequester,
+    name: String, onNameChange: (String) -> Unit,
+    categoryId: Long?, onCategoryChange: (Long?) -> Unit,
+    subcategoryId: Long?, onSubcategoryChange: (Long?) -> Unit,
+    price: String, onPriceChange: (String) -> Unit,
+    salePrice: String, onSalePriceChange: (String) -> Unit,
+    openingStock: String, onStockChange: (String) -> Unit,
+    unit: String, onUnitChange: (String) -> Unit,
+    onSave: (Product, Boolean) -> Unit,
+    onDelete: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var categoryId by remember { mutableStateOf(initial?.categoryId) }
-    var subcategoryId by remember { mutableStateOf(initial?.subcategoryId) }
-    var price by remember { mutableStateOf(initial?.price?.toString() ?: "") }
-    var salePrice by remember { mutableStateOf(initial?.salePrice?.toString() ?: "") }
-    var openingStock by remember { mutableStateOf(initial?.openingStock?.toString() ?: "") }
-    var unit by remember { mutableStateOf(initial?.unit ?: "pcs") }
-    var busy by remember { mutableStateOf(false) }
     var showCatMenu by remember { mutableStateOf(false) }
     var showSubMenu by remember { mutableStateOf(false) }
+    var showUnitMenu by remember { mutableStateOf(false) }
 
     val filteredSubs = subcategories.filter { it.categoryId == categoryId }
+    val units = listOf("pcs", "kg", "g", "m", "cm", "ft", "inch", "yd", "ltr")
 
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(if (initial == null) "New Product" else "Edit Product") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.heightIn(max = 500.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Box {
-                    OutlinedButton(onClick = { showCatMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Category: ${categories.firstOrNull { it.id == categoryId }?.name ?: "None"}")
-                    }
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
+        // ========== SCROLLABLE CONTENT ==========
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                if (initial == null) "New Product Details" else "Edit Product Details",
+                fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF2C3E50)
+            )
+
+            OutlinedTextField(
+                name, onNameChange,
+                label = { Text("Product Name *") },
+                singleLine = true,
+                enabled = !isSaving,
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.fillMaxWidth().focusRequester(nameFocus)
+            )
+
+            // Category & Subcategory Row
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = categories.firstOrNull { it.id == categoryId }?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        shape = RoundedCornerShape(6.dp),
+                        trailingIcon = {
+                            IconButton(onClick = { showCatMenu = true }, enabled = !isSaving) {
+                                Icon(Icons.Default.ArrowDropDown, null)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     DropdownMenu(showCatMenu, { showCatMenu = false }) {
-                        DropdownMenuItem(text = { Text("None") }, onClick = { categoryId = null; subcategoryId = null; showCatMenu = false })
+                        DropdownMenuItem(text = { Text("None") }, onClick = { onCategoryChange(null); onSubcategoryChange(null); showCatMenu = false })
                         categories.forEach { c ->
-                            DropdownMenuItem(text = { Text(c.name) }, onClick = { categoryId = c.id; subcategoryId = null; showCatMenu = false })
+                            DropdownMenuItem(
+                                text = { Text(c.name) },
+                                onClick = { onCategoryChange(c.id); onSubcategoryChange(null); showCatMenu = false }
+                            )
                         }
                     }
                 }
-                Box {
-                    OutlinedButton(onClick = { showSubMenu = true }, enabled = categoryId != null, modifier = Modifier.fillMaxWidth()) {
-                        Text("Subcategory: ${filteredSubs.firstOrNull { it.id == subcategoryId }?.name ?: "None"}")
-                    }
+                Box(Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = filteredSubs.firstOrNull { it.id == subcategoryId }?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Subcategory") },
+                        shape = RoundedCornerShape(6.dp),
+                        enabled = categoryId != null,
+                        trailingIcon = {
+                            IconButton(onClick = { showSubMenu = true }, enabled = categoryId != null && !isSaving) {
+                                Icon(Icons.Default.ArrowDropDown, null)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     DropdownMenu(showSubMenu, { showSubMenu = false }) {
-                        DropdownMenuItem(text = { Text("None") }, onClick = { subcategoryId = null; showSubMenu = false })
+                        DropdownMenuItem(text = { Text("None") }, onClick = { onSubcategoryChange(null); showSubMenu = false })
                         filteredSubs.forEach { s ->
-                            DropdownMenuItem(text = { Text(s.name) }, onClick = { subcategoryId = s.id; showSubMenu = false })
+                            DropdownMenuItem(
+                                text = { Text(s.name) },
+                                onClick = { onSubcategoryChange(s.id); showSubMenu = false }
+                            )
                         }
                     }
                 }
-                OutlinedTextField(price, { price = sanitizeDecimal(it) }, label = { Text("Purchase Price") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(salePrice, { salePrice = sanitizeDecimal(it) }, label = { Text("Sale Price") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(openingStock, { openingStock = sanitizeDecimal(it) }, label = { Text("Opening Stock") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(unit, { unit = it }, label = { Text("Unit") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy && name.isNotBlank(), onClick = {
-                scope.launch {
-                    busy = true
-                    onSave(Product(
-                        id = initial?.id ?: 0L, name = name.trim(),
-                        categoryId = categoryId, subcategoryId = subcategoryId,
-                        price = price.toDoubleOrNull() ?: 0.0,
-                        salePrice = salePrice.toDoubleOrNull() ?: 0.0,
-                        openingStock = openingStock.toDoubleOrNull() ?: 0.0,
-                        unit = unit.trim().ifBlank { "pcs" },
-                    ))
-                    busy = false; onDismiss()
+
+            // Price Row
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    price, { onPriceChange(sanitizeDecimal(it)) },
+                    label = { Text("Pur. Price (Rs)") },
+                    singleLine = true,
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(6.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    salePrice, { onSalePriceChange(sanitizeDecimal(it)) },
+                    label = { Text("Sale Price (Rs)") },
+                    singleLine = true,
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(6.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Stock Row
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    openingStock, { onStockChange(sanitizeDecimal(it)) },
+                    label = { Text("Opening Stock") },
+                    singleLine = true,
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(6.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f)
+                )
+                Box(Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        unit, onUnitChange,
+                        label = { Text("Unit") },
+                        singleLine = true,
+                        enabled = !isSaving,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(onClick = { showUnitMenu = true }, enabled = !isSaving) {
+                                Icon(Icons.Default.ArrowDropDown, null)
+                            }
+                        }
+                    )
+                    DropdownMenu(showUnitMenu, { showUnitMenu = false }) {
+                        units.forEach { u ->
+                            DropdownMenuItem(
+                                text = { Text(u) },
+                                onClick = { onUnitChange(u); showUnitMenu = false }
+                            )
+                        }
+                    }
                 }
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
-    )
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFE0E0E0))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable(enabled = !isSaving) { onLockChange(!isLocked) }
+            ) {
+                Checkbox(
+                    checked = isLocked,
+                    onCheckedChange = { onLockChange(it) },
+                    enabled = !isSaving,
+                    colors = CheckboxDefaults.colors(checkedColor = AppGreen)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("Data Not Clear (Lock form for next entry)", fontSize = 13.sp, color = Color.DarkGray)
+            }
+        }
+
+        // ========== FIXED BOTTOM BUTTONS ==========
+        HorizontalDivider(Modifier.padding(top = 16.dp, bottom = 16.dp), color = Color(0xFFE0E0E0))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        val p = Product(
+                            id = initial?.id ?: 0L,
+                            name = name.trim(),
+                            categoryId = categoryId,
+                            subcategoryId = subcategoryId,
+                            price = price.toDoubleOrNull() ?: 0.0,
+                            salePrice = salePrice.toDoubleOrNull() ?: 0.0,
+                            openingStock = openingStock.toDoubleOrNull() ?: 0.0,
+                            unit = unit.trim().ifBlank { "pcs" }
+                        )
+                        onSave(p, isLocked)
+                    }
+                },
+                enabled = !isSaving && name.isNotBlank(),
+                modifier = Modifier.weight(1f).height(44.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AppGreen)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Text("SAVE PRODUCT", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+
+            if (initial != null) {
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isSaving,
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    border = BorderStroke(1.dp, Color.Red)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("DELETE", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        }
+    }
 }

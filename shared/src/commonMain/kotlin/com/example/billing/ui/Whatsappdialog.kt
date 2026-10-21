@@ -17,20 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.billing.utils.buildNumberFromCountry
-import com.example.billing.utils.buildNumberFromFull
-import com.example.billing.utils.isValidWhatsAppNumber
-import com.example.billing.utils.normalizeWhatsAppNumber
+import com.example.billing.utils.*
 import com.example.billing.utils.sanitizePhone
-import com.example.billing.utils.waCountries
 
-/**
- * "Kis number par bhejna hai?" ka dialog.
- *  1) Bill wala number (agar sahi lagta ho)
- *  2) Dusra number: mulk chunein (PK / UAE / UK / US / ...) + number likhein
- *
- * onSend(e164, saveOnBill): e164 = country code samet number bina '+' (jaise 971501234567)
- */
 @Composable
 fun WhatsAppSendDialog(
     customerName: String,
@@ -42,7 +31,7 @@ fun WhatsAppSendDialog(
     val savedValid = isValidWhatsAppNumber(savedNumber)
 
     var useOther by remember { mutableStateOf(!savedValid) }
-    var countryIndex by remember { mutableStateOf(0) }          // waCountries.size = "Other"
+    var countryIndex by remember { mutableStateOf(0) }
     var local by remember { mutableStateOf("") }
     var saveOnBill by remember { mutableStateOf(false) }
 
@@ -56,14 +45,13 @@ fun WhatsAppSendDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Send bill on WhatsApp") },
+        title = { Text("Send bill on WhatsApp", fontWeight = FontWeight.Bold) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Customer: $customerName", fontSize = 13.sp, color = Color.Gray)
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Customer: $customerName", fontSize = 13.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
 
                 NumberChoiceCard(
-                    selected = !useOther,
-                    enabled = savedValid,
+                    selected = !useOther, enabled = savedValid,
                     title = "Number on this bill",
                     subtitle = when {
                         savedValid -> "+$savedNumber"
@@ -74,8 +62,7 @@ fun WhatsAppSendDialog(
                     onClick = { useOther = false },
                 )
                 NumberChoiceCard(
-                    selected = useOther,
-                    enabled = true,
+                    selected = useOther, enabled = true,
                     title = "Different number",
                     subtitle = "Second number, or a number from another country",
                     subtitleColor = Color.Gray,
@@ -86,31 +73,26 @@ fun WhatsAppSendDialog(
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         waCountries.forEachIndexed { i, c ->
                             FilterChip(
-                                selected = countryIndex == i,
-                                onClick = { countryIndex = i },
-                                label = { Text("${c.label} +${c.code}") },
+                                selected = countryIndex == i, onClick = { countryIndex = i },
+                                label = { Text("${c.label} +${c.code}", fontSize = 12.sp) },
+                                shape = RoundedCornerShape(6.dp)
                             )
                         }
                         FilterChip(
-                            selected = isOther,
-                            onClick = { countryIndex = waCountries.size },
-                            label = { Text("Other") },
+                            selected = isOther, onClick = { countryIndex = waCountries.size },
+                            label = { Text("Other", fontSize = 12.sp) },
+                            shape = RoundedCornerShape(6.dp)
                         )
                     }
                     OutlinedTextField(
-                        value = local,
-                        onValueChange = { local = sanitizePhone(it) },
+                        value = local, onValueChange = { local = sanitizePhone(it) },
                         label = { Text(if (isOther) "Number with country code" else "Phone number") },
                         prefix = { Text(if (isOther) "+" else "+$code ") },
-                        singleLine = true,
+                        singleLine = true, shape = RoundedCornerShape(6.dp),
                         isError = local.isNotBlank() && !otherValid,
                         supportingText = {
-                            Text(
-                                if (isOther) "Example: 447911123456 (UK), 971501234567 (UAE)"
-                                else "Without country code, e.g. 0501234567 or 501234567"
-                            )
+                            Text(if (isOther) "Example: 447911123456 (UK), 971501234567 (UAE)" else "Without country code, e.g. 0501234567")
                         },
-                        shape = RoundedCornerShape(10.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -118,27 +100,15 @@ fun WhatsAppSendDialog(
 
                 Text(
                     if (targetValid) "Chat will open with: +$target" else "Enter a valid number to continue",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (targetValid) PaidColor else Color.Red,
+                    fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (targetValid) PaidColor else Color.Red,
                 )
 
                 if (useOther && otherValid) {
-                    Row(
-                        Modifier.fillMaxWidth().clickable { saveOnBill = !saveOnBill },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(checked = saveOnBill, onCheckedChange = { saveOnBill = it })
+                    Row(Modifier.fillMaxWidth().clickable { saveOnBill = !saveOnBill }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = saveOnBill, onCheckedChange = { saveOnBill = it }, colors = CheckboxDefaults.colors(checkedColor = AppGreen))
                         Text("Also save this number on the bill", fontSize = 13.sp)
                     }
                 }
-
-                Text(
-                    "WhatsApp cannot tell us in advance whether a number has WhatsApp. " +
-                            "If it says the number is not on WhatsApp, come back and choose \"Different number\".",
-                    fontSize = 11.sp,
-                    color = Color.Gray,
-                )
             }
         },
         confirmButton = {
@@ -146,32 +116,29 @@ fun WhatsAppSendDialog(
                 onClick = { onSend(target, useOther && saveOnBill) },
                 enabled = targetValid,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-            ) { Text("Send", fontWeight = FontWeight.Bold) }
+                shape = RoundedCornerShape(6.dp)
+            ) { Text("Send Message", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        shape = RoundedCornerShape(8.dp), containerColor = Color.White
     )
 }
 
 @Composable
 private fun NumberChoiceCard(
-    selected: Boolean,
-    enabled: Boolean,
-    title: String,
-    subtitle: String,
-    subtitleColor: Color,
-    onClick: () -> Unit,
+    selected: Boolean, enabled: Boolean, title: String, subtitle: String, subtitleColor: Color, onClick: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(6.dp),
         color = if (enabled) Color.White else Color(0xFFF5F5F5),
-        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) AppGreen else Color(0xFFE2E8F0)),
+        border = BorderStroke(if (selected) 1.dp else 1.dp, if (selected) AppGreen else Color(0xFFE0E0E0)),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
     ) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = selected, onClick = null, enabled = enabled)
+            RadioButton(selected = selected, onClick = null, enabled = enabled, colors = RadioButtonDefaults.colors(selectedColor = AppGreen))
             Spacer(Modifier.width(8.dp))
             Column {
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (enabled) Color(0xFF0F172A) else Color.Gray)
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (enabled) Color(0xFF1E293B) else Color.Gray)
                 Text(subtitle, fontSize = 12.sp, color = subtitleColor)
             }
         }
