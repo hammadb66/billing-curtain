@@ -71,7 +71,16 @@ class FirebaseApi {
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        LicenseFetch.Failed(e.message ?: "network error")
+        // Agar exception message mein "firebase" ya URL jaisa kuch hai, to user-friendly message dein
+        val msg = e.message ?: ""
+        val friendlyMsg = when {
+            msg.contains("firebase", ignoreCase = true) || msg.contains("http", ignoreCase = true) ->
+                "No internet connection. Please check your connection and try again."
+            msg.contains("timeout", ignoreCase = true) ->
+                "Connection timed out. Please try again."
+            else -> msg
+        }
+        LicenseFetch.Failed(friendlyMsg)
     }
 
     /** Is shop ke registered laptops */

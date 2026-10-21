@@ -1,0 +1,175 @@
+-- ============ VENDORS ============
+CREATE TABLE IF NOT EXISTS VendorEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    phone1 TEXT NOT NULL DEFAULT '',
+    phone2 TEXT NOT NULL DEFAULT '',
+    accountDescription TEXT NOT NULL DEFAULT '',
+    createdAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS VendorPaymentEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    vendorId INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    discount REAL NOT NULL DEFAULT 0.0,
+    date TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT ''
+);
+
+-- ============ CATEGORY / SUBCATEGORY ============
+CREATE TABLE IF NOT EXISTS CategoryEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS SubcategoryEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    categoryId INTEGER NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE,
+    UNIQUE(categoryId, name)
+);
+
+-- ============ PRODUCTS ============
+CREATE TABLE IF NOT EXISTS ProductEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    categoryId INTEGER,
+    subcategoryId INTEGER,
+    price REAL NOT NULL DEFAULT 0.0,
+    salePrice REAL NOT NULL DEFAULT 0.0,
+    openingStock REAL NOT NULL DEFAULT 0.0,
+    unit TEXT NOT NULL DEFAULT 'pcs'
+);
+
+-- ============ PURCHASES ============
+-- data = JSON list of PurchaseItem { productId, name, qty, price, unit }
+CREATE TABLE IF NOT EXISTS PurchaseEntity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    vendorId INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    data TEXT NOT NULL,
+    total REAL NOT NULL DEFAULT 0.0,
+    discount REAL NOT NULL DEFAULT 0.0,
+    paid REAL NOT NULL DEFAULT 0.0,
+    notes TEXT NOT NULL DEFAULT ''
+);
+
+-- ============ VENDOR QUERIES ============
+selectAllVendors:
+SELECT * FROM VendorEntity ORDER BY name COLLATE NOCASE;
+
+selectVendorById:
+SELECT * FROM VendorEntity WHERE id = ?;
+
+insertVendor:
+INSERT INTO VendorEntity(name, address, phone1, phone2, accountDescription, createdAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateVendor:
+UPDATE VendorEntity SET name=?, address=?, phone1=?, phone2=?, accountDescription=? WHERE id = ?;
+
+deleteVendor:
+DELETE FROM VendorEntity WHERE id = ?;
+
+-- Vendor balance = SUM(purchases.total - purchases.paid) - SUM(payments.amount)
+selectVendorBalance:
+SELECT
+  COALESCE((SELECT SUM(total - discount - paid) FROM PurchaseEntity WHERE vendorId = ?), 0) -
+  COALESCE((SELECT SUM(amount + discount) FROM VendorPaymentEntity WHERE vendorId = ?), 0) AS balance;
+
+selectVendorPaymentTotal:
+SELECT COALESCE(SUM(amount), 0) FROM VendorPaymentEntity WHERE vendorId = ?;
+
+-- ============ VENDOR PAYMENTS ============
+selectPaymentsForVendor:
+SELECT * FROM VendorPaymentEntity WHERE vendorId = ? ORDER BY date DESC, id DESC;
+
+insertVendorPayment:
+INSERT INTO VendorPaymentEntity(vendorId, amount, discount, date, note) VALUES (?, ?, ?, ?, ?);
+
+updateVendorPayment:
+UPDATE VendorPaymentEntity SET amount=?, discount=?, date=?, note=? WHERE id = ?;
+
+deleteVendorPayment:
+DELETE FROM VendorPaymentEntity WHERE id = ?;
+
+-- ============ CATEGORY QUERIES ============
+selectAllCategories:
+SELECT * FROM CategoryEntity ORDER BY name COLLATE NOCASE;
+
+selectCategoryByName:
+SELECT * FROM CategoryEntity WHERE name = ? COLLATE NOCASE;
+
+insertCategory:
+INSERT INTO CategoryEntity(name) VALUES (?);
+
+updateCategory:
+UPDATE CategoryEntity SET name = ? WHERE id = ?;
+
+deleteCategory:
+DELETE FROM CategoryEntity WHERE id = ?;
+
+-- ============ SUBCATEGORY QUERIES ============
+selectAllSubcategories:
+SELECT * FROM SubcategoryEntity ORDER BY name COLLATE NOCASE;
+
+selectSubcategoriesForCategory:
+SELECT * FROM SubcategoryEntity WHERE categoryId = ? ORDER BY name COLLATE NOCASE;
+
+selectSubcategoryByName:
+SELECT * FROM SubcategoryEntity WHERE categoryId = ? AND name = ? COLLATE NOCASE;
+
+insertSubcategory:
+INSERT INTO SubcategoryEntity(categoryId, name) VALUES (?, ?);
+
+updateSubcategory:
+UPDATE SubcategoryEntity SET name = ? WHERE id = ?;
+
+deleteSubcategory:
+DELETE FROM SubcategoryEntity WHERE id = ?;
+
+-- ============ PRODUCT QUERIES ============
+selectAllProducts:
+SELECT * FROM ProductEntity ORDER BY name COLLATE NOCASE;
+
+selectProductById:
+SELECT * FROM ProductEntity WHERE id = ?;
+
+insertProduct:
+INSERT INTO ProductEntity(name, categoryId, subcategoryId, price, salePrice, openingStock, unit)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateProduct:
+UPDATE ProductEntity SET name=?, categoryId=?, subcategoryId=?, price=?, salePrice=?, openingStock=?, unit=?
+WHERE id = ?;
+
+deleteProduct:
+DELETE FROM ProductEntity WHERE id = ?;
+
+-- ============ PURCHASE QUERIES ============
+selectAllPurchases:
+SELECT * FROM PurchaseEntity ORDER BY date DESC, id DESC;
+
+selectPurchasesForVendor:
+SELECT * FROM PurchaseEntity WHERE vendorId = ? ORDER BY date DESC, id DESC;
+
+selectPurchaseById:
+SELECT * FROM PurchaseEntity WHERE id = ?;
+
+insertPurchase:
+INSERT INTO PurchaseEntity(vendorId, date, data, total, discount, paid, notes)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updatePurchase:
+UPDATE PurchaseEntity SET vendorId=?, date=?, data=?, total=?, discount=?, paid=?, notes=? WHERE id = ?;
+
+deletePurchase:
+DELETE FROM PurchaseEntity WHERE id = ?;
+
+-- ============ PRODUCT MIGRATION: purane MasterItems ko Product me daalein (agar khali ho) ============
+countProducts:
+SELECT COUNT(*) FROM ProductEntity;
+lastInsertedId:
+SELECT last_insert_rowid();

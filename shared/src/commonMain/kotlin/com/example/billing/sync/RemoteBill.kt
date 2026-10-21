@@ -27,6 +27,10 @@ data class RemoteBill(
     val serverTs: Long = 0,
     /** Invoice number jo customer ko diya gaya (maslan "hammad-05"). Purane bills me khali. */
     val invoiceLabel: String = "",
+    // NEW: display options saved with the bill
+    val showProduct: Boolean = false,
+    val showCategory: Boolean = false,
+    val showSubcategory: Boolean = false,
 )
 
 fun Bill.toRemote(updatedAt: Long, deviceId: String) = RemoteBill(
@@ -41,6 +45,9 @@ fun Bill.toRemote(updatedAt: Long, deviceId: String) = RemoteBill(
     updatedAt = updatedAt,
     deviceId = deviceId,
     invoiceLabel = invoiceLabel,
+    showProduct = showProduct,
+    showCategory = showCategory,
+    showSubcategory = showSubcategory,
 )
 
 fun RemoteBill.toBill() = Bill(
@@ -53,4 +60,7 @@ fun RemoteBill.toBill() = Bill(
     extraCharges = extraCharges,
     paidAmount = paidAmount,
     invoiceLabel = invoiceLabel,
+    showProduct = showProduct,
+    showCategory = showCategory,
+    showSubcategory = showSubcategory,
 )

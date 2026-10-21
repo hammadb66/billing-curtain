@@ -10,14 +10,12 @@ import com.example.billing.utils.formatQty
  * paidAmount = null  -> poora paisa mila (PAID)
  */
 fun buildInvoiceRows(
-    customer: String,
-    phone: String,
-    date: String,
-    rooms: List<RoomData>,
-    discount: Double = 0.0,
-    extraCharges: Double = 0.0,
-    invoiceNo: String? = null,
-    paidAmount: Double? = null,
+    customer: String, phone: String, date: String, rooms: List<RoomData>,
+    discount: Double = 0.0, extraCharges: Double = 0.0,
+    invoiceNo: String? = null, paidAmount: Double? = null,
+    showProduct: Boolean = false,
+    showCategory: Boolean = false,
+    showSubcategory: Boolean = false,
 ): List<PdfRow> {
     val rows = mutableListOf<PdfRow>()
     if (Branding.licensedTo.isNotBlank()) {
@@ -37,21 +35,23 @@ fun buildInvoiceRows(
         val valid = room.validItems
         if (valid.isEmpty()) continue
 
-        rows += PdfRow(left = "Room: ${room.roomName.ifBlank { "Room" }}", bold = true, fontSize = 14f)
+        val billTitle = room.roomName.ifBlank { "All Items" }
+        rows += PdfRow(left = billTitle, bold = true, fontSize = 14f)
         rows += PdfRow(left = "Item", qty = "Qty", rate = "Rate", right = "Total", bold = true)
         rows += PdfRow(kind = RowKind.LINE)
         var roomTotal = 0.0
         for (item in valid) {
+            val displayText = item.displayName(showProduct, showCategory, showSubcategory)
             roomTotal += item.total
             rows += PdfRow(
-                left = item.name,
+                left = displayText,
                 qty = "${formatQty(item.qtyValue)} ${item.unit}",
                 rate = formatMoney(item.rateValue),
                 right = formatMoney(item.total),
             )
         }
         rows += PdfRow(kind = RowKind.LINE)
-        rows += PdfRow(right = "Room Total: Rs ${formatMoney(roomTotal)}", bold = true)
+        rows += PdfRow(right = "Section Total: Rs ${formatMoney(roomTotal)}", bold = true)
         rows += PdfRow(kind = RowKind.SPACE)
         subtotal += roomTotal
     }

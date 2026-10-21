@@ -7,6 +7,7 @@ import com.example.billing.auth.FirebaseApi
 import com.example.billing.auth.LicenseManager
 import com.example.billing.data.BillRepository
 import com.example.billing.data.DriverFactory
+import com.example.billing.data.VendorRepository
 import com.example.billing.sync.BillCloudApi
 import com.example.billing.sync.CloudAuth
 import com.example.billing.sync.SyncManager
@@ -18,6 +19,8 @@ class AppServices(
     val license: LicenseManager,
     val firebase: FirebaseApi,
     val sync: SyncManager,
+    val vendors: VendorRepository,   // NEW
+
 )
 
 fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): AppServices {
@@ -26,6 +29,7 @@ fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): App
     val firebase = FirebaseApi()
     val bills = BillRepository(database)
     val license = LicenseManager(settings, firebase, device)
+    val vendors = VendorRepository(database, bills) // <--- YAHAN BILLS PASS KAREIN
     return AppServices(
         bills = bills,
         auth = AuthRepository(database, settings),
@@ -33,5 +37,6 @@ fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): App
         license = license,
         firebase = firebase,
         sync = SyncManager(settings, bills, BillCloudApi(CloudAuth(license.deviceId), license.deviceId), license.deviceId),
+        vendors = vendors,
     )
 }

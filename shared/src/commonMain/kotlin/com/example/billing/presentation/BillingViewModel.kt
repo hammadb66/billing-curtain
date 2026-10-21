@@ -31,11 +31,7 @@ class BillingViewModel(
             _masterItems.value = settings.getMasterItems()
         }
     }
-    fun reloadMasterItems() {
-        viewModelScope.launch {
-            _masterItems.value = settings.getMasterItems()
-        }
-    }
+
     fun loadCustomerInfo(phone: String) {
         if (phone.length >= 7) {
             viewModelScope.launch {
@@ -51,6 +47,7 @@ class BillingViewModel(
     // Yahan hum UI ko print karne ke liye data wapas de rahe hain
     fun saveBill(
         userName: String,
+        showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean,  // NEW
         onSuccess: (String, String, String, String, List<RoomData>, Double, Double, Double) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -64,8 +61,10 @@ class BillingViewModel(
                 val extraVal = form.extraValue
                 val paid = form.receivedValue
 
-                val invoiceNo = repository.insertBill(customer, phone, rooms, iso, discVal, extraVal, paid, userName)
-
+                val invoiceNo = repository.insertBill(
+                    customer, phone, rooms, iso, discVal, extraVal, paid,
+                    userName, showProduct, showCategory, showSubcategory,
+                )
                 // Save kamyab hone par UI ko data bhej diya
                 onSuccess(invoiceNo, customer, phone, iso, rooms, discVal, extraVal, paid)
             } catch (e: Exception) {

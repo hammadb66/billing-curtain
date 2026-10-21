@@ -12,10 +12,32 @@ private fun nextId(): Long = idCounter++
 class ItemState(val name: String, var unit: String = "") {
     var qty by mutableStateOf("")
     var rate by mutableStateOf("")
+    var stock: Double = 0.0 // NAYA: Stock store karne ke liye
+    // NEW
+    var productId: Long? = null
+    var productName by mutableStateOf("")
+    var categoryName by mutableStateOf("")
+    var subcategoryName by mutableStateOf("")
+    var displayType by mutableStateOf("default") // "default"|"category"|"subcategory"|"product"
+
     val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
 
     /** Kuch likha hai (qty ya rate) lekin total 0 hai -> adhura item. */
     val isIncomplete: Boolean get() = (qty.isNotBlank() || rate.isNotBlank()) && total <= 0.0
+
+
+    fun displayName(showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean): String =
+        when (displayType) {
+            "product" -> productName.ifBlank { name }
+            "category" -> categoryName.ifBlank { name }
+            "subcategory" -> subcategoryName.ifBlank { name }
+            else -> when {
+                showProduct && productName.isNotBlank() -> productName
+                showCategory && categoryName.isNotBlank() -> categoryName
+                showSubcategory && subcategoryName.isNotBlank() -> subcategoryName
+                else -> name
+            }
+        }
 }
 
 class RoomState {
@@ -25,14 +47,27 @@ class RoomState {
     val items = mutableStateListOf<ItemState>()
     val total: Double get() = items.sumOf { it.total }
 
-    fun addItem(name: String, unit: String = "") { // <--- YEH UPDATE KAREIN
-        items.add(ItemState(name, unit))
+    // addItem ko update karo taake extra data le sake
+    fun addProduct(product: Product,stock: Double) {
+        val item = ItemState(product.name, product.unit)
+        item.productId = product.id
+        item.productName = product.name
+        item.categoryName = product.categoryName
+        item.subcategoryName = product.subcategoryName
+        item.stock = stock
+        items.add(item)
     }
 
     /** Wohi item us ke neeche dobara (alag rate ke liye). */
     fun duplicateItem(item: ItemState) {
         val i = items.indexOf(item)
-        val copy = ItemState(item.name, item.unit) // <--- Yahan item.unit pass karein
+        val copy = ItemState(item.name, item.unit).apply {
+            productId = item.productId
+            productName = item.productName
+            categoryName = item.categoryName
+            subcategoryName = item.subcategoryName
+            displayType = item.displayType
+        }
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
 
@@ -42,7 +77,16 @@ class RoomState {
 
     fun toRoomData() = RoomData(
         roomName = name.trim(),
-        items = items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }.map { ItemData(it.name, it.qty, it.rate) }
+        items = items
+            .filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
+            .map {
+                ItemData(
+                    name = it.name, qty = it.qty, rate = it.rate, unit = it.unit,
+                    productId = it.productId, productName = it.productName,
+                    categoryName = it.categoryName, subcategoryName = it.subcategoryName,
+                    displayType = it.displayType,
+                )
+            }
     )
 }
 
@@ -50,6 +94,11 @@ class BillingFormState {
     var customer by mutableStateOf("")
     var phone by mutableStateOf("")
     var discount by mutableStateOf("")
+
+    // NEW: display checkboxes
+    var showProduct by mutableStateOf(false)
+    var showCategory by mutableStateOf(false)
+    var showSubcategory by mutableStateOf(false)
     var discountIsPercent by mutableStateOf(false)   // false = Rs, true = %
     var extraCharges by mutableStateOf("")
     var received by mutableStateOf("")               // khali = 0 mila
@@ -69,10 +118,14 @@ class BillingFormState {
     val hasAnyItem: Boolean get() = rooms.any { r -> r.items.any { it.total > 0.0 } }
     val hasIncompleteItem: Boolean get() = rooms.any { r -> r.items.any { it.isIncomplete } }
 
-    fun addRoom() { rooms.add(RoomState()) }
+    fun addRoom() {
+        rooms.add(RoomState())
+    }
+
     fun removeRoom(room: RoomState) {
         if (rooms.isNotEmpty() && rooms.first() !== room) rooms.remove(room)
     }
+
     fun reset() {
         customer = ""
         phone = ""
@@ -82,6 +135,10 @@ class BillingFormState {
         received = ""
         rooms.clear()
         rooms.add(RoomState())
+        showProduct = false
+        showCategory = false
+        showSubcategory = false
     }
+
     fun toRoomDataList(): List<RoomData> = rooms.map { it.toRoomData() }.filter { it.items.isNotEmpty() }
 }

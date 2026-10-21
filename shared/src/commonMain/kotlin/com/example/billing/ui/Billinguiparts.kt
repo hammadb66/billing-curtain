@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.billing.model.MasterItem
+import com.example.billing.model.Product
 import com.example.billing.utils.formatMoney
 import com.example.billing.utils.sanitizeDecimal
 
@@ -124,7 +126,6 @@ fun DiscountInput(
     )
 }
 
-// YAHAN UNIT ADD KIYA HAI
 @Composable
 fun ItemEntryCard(
     name: String,
@@ -135,31 +136,105 @@ fun ItemEntryCard(
     onRateChange: (String) -> Unit,
     total: Double,
     isIncomplete: Boolean,
-    unit: String = "", // <--- YEH NAYA HAI
+    unit: String = "",
+    displayType: String = "default",
+    onDisplayTypeChange: (String) -> Unit = {},
+    productName: String = "",
+    categoryName: String = "",
+    subcategoryName: String = "",
+    stock: Double = 0.0, // NAYA: Stock parameter
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = if (isIncomplete) Color(0xFFFFF3F3) else Color(0xFFF8FAFC),
         border = BorderStroke(1.dp, if (isIncomplete) Color(0xFFFFCDD2) else Color(0xFFE2E8F0)),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 8.dp)) {
+
+            // ========== TOP ROW: Naam + Same Item + Delete ==========
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (occurrence > 1) "$name ($occurrence)" else name, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(34.dp)) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = AppGreen, modifier = Modifier.size(14.dp))
+                Text(
+                    if (occurrence > 1) "$name ($occurrence)" else name,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                )
+
+                TextButton(
+                    onClick = onDuplicate,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.height(34.dp),
+                ) {
+                    Icon(Icons.Default.Add, null, tint = AppGreen, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(2.dp))
-                    Text("Same item", fontSize = 11.sp, color = AppGreen, fontWeight = FontWeight.Bold)
+                    Text("Same", fontSize = 11.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                 }
+
                 IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Remove item", tint = Color.Red, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Delete, null, tint = Color.Red, modifier = Modifier.size(16.dp))
                 }
             }
-            Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
+
+            // ========== MIDDLE ROW: Dropdown aur Stock ==========
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Dropdown (Display As)
+                Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { expanded = true }.padding(vertical = 4.dp)
+                    ) {
+                        val displayLabel = when(displayType) {
+                            "product" -> "Show: Product"
+                            "category" -> "Show: Category"
+                            "subcategory" -> "Show: Subcategory"
+                            else -> "Show: Default"
+                        }
+                        Text(displayLabel, fontSize = 11.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(14.dp), tint = Color(0xFF1565C0))
+                    }
+                    DropdownMenu(expanded, { expanded = false }) {
+                        listOf(
+                            "default" to "Default",
+                            "product" to "Product: ${productName.ifBlank { "—" }}",
+                            "category" to "Category: ${categoryName.ifBlank { "—" }}",
+                            "subcategory" to "Subcategory: ${subcategoryName.ifBlank { "—" }}",
+                        ).forEach { (key, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label, fontSize = 13.sp) },
+                                onClick = { onDisplayTypeChange(key); expanded = false }
+                            )
+                        }
+                    }
+                }
+
+                // Stock Display
+                Text(
+                    "Available Stock: ${formatMoney(stock)} $unit",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (stock > 0) AppGreen else Color.Red
+                )
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // ========== BOTTOM ROW: Qty | Rate | Total ==========
+            Row(
+                Modifier.padding(end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
                 Column(Modifier.weight(1f)) {
-                    // Yahan Label badla hai
                     Text(if (unit.isNotBlank()) "Qty ($unit)" else "Qty", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     CompactNumberField(qty, onQtyChange, Modifier.fillMaxWidth())
                 }
@@ -169,69 +244,69 @@ fun ItemEntryCard(
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Text("Total", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                    Text(formatMoney(total), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppGreen, textAlign = TextAlign.End, modifier = Modifier.padding(bottom = 8.dp))
+                    Text(
+                        formatMoney(total),
+                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        color = AppGreen, textAlign = TextAlign.End,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
                 }
             }
         }
     }
 }
-
-
 @Composable
 fun AddItemDialog(
-    masterItems: List<MasterItem>,
-    onPick: (MasterItem) -> Unit,
-    onManageItems: () -> Unit,
-    onDismiss: () -> Unit
+    products: List<Product>,
+    onPick: (Product) -> Unit,
+    onManageProducts: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val list = remember(query, masterItems) {
-        masterItems.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    val list = remember(query, products) {
+        products.filter { query.isBlank() || it.name.contains(query, true) }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Item", fontWeight = FontWeight.Bold) },
+        title = { Text("Select Product", fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Search item...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    value = query, onValueChange = { query = it },
+                    placeholder = { Text("Search product...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) },
+                    singleLine = true, shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen)
                 )
                 Spacer(Modifier.height(12.dp))
-
-                Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
-                    if (list.isEmpty()) {
-                        Text("No item found", color = Color.Gray, modifier = Modifier.padding(vertical = 12.dp))
-                    }
-                    list.forEach { item ->
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    if (list.isEmpty()) Text("No product found", color = Color.Gray, modifier = Modifier.padding(12.dp))
+                    list.forEach { p ->
                         Surface(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onPick(item) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFF8FAFC)
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onPick(p) },
+                            shape = RoundedCornerShape(8.dp), color = Color(0xFFF8FAFC)
                         ) {
-                            Row(
-                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                Surface(
-                                    color = AppGreen.copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(p.name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    val subtitle = listOfNotNull(
+                                        p.categoryName.takeIf { it.isNotBlank() },
+                                        p.subcategoryName.takeIf { it.isNotBlank() }
+                                    ).joinToString(" › ")
+                                    if (subtitle.isNotBlank())
+                                        Text(subtitle, fontSize = 11.sp, color = Color.Gray)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("Rs ${formatMoney(p.salePrice)}", fontSize = 12.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                                     Text(
-                                        item.unit,
-                                        fontSize = 11.sp,
-                                        color = AppGreen,
+                                        "Stock: ${formatMoney(p.liveStock ?: p.openingStock)} ${p.unit}",
+                                        fontSize = 10.sp,
+                                        color = if ((p.liveStock ?: p.openingStock) > 0) AppGreen else Color.Red,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
+                                    Text(p.unit, fontSize = 10.sp, color = Color.Gray)
                                 }
                             }
                         }
@@ -240,10 +315,10 @@ fun AddItemDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onManageItems) {
-                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+            TextButton(onClick = onManageProducts) {
+                Icon(Icons.Default.Settings, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Manage Items", color = AppGreen, fontWeight = FontWeight.Bold)
+                Text("Manage Products", color = AppGreen, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

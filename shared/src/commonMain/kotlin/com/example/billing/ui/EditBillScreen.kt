@@ -29,6 +29,7 @@ import com.example.billing.data.BillRepository
 import com.example.billing.model.Bill
 import com.example.billing.model.ItemData
 import com.example.billing.model.MasterItem
+import com.example.billing.model.Product
 import com.example.billing.model.RoomData
 import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.formatMoney
@@ -41,9 +42,21 @@ import org.koin.compose.koinInject
 
 private var editIdCounter = 0L
 
-private class EditItem(val name: String, initialQty: String, initialRate: String ,val unit: String) {
+private class EditItem(
+    val name: String,
+    val initialQty: String,   // ⬅️ val add karo
+    initialRate: String,
+    val unit: String,
+    val productId: Long? = null,
+    val productName: String = "",
+    val categoryName: String = "",
+    val subcategoryName: String = "",
+    val initialDisplayType: String = "default",
+) {
     var qty by mutableStateOf(initialQty)
     var rate by mutableStateOf(initialRate)
+    var displayType by mutableStateOf(initialDisplayType)   // ← state banao
+
     val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
     val isIncomplete: Boolean get() = (qty.isNotBlank() || rate.isNotBlank()) && total <= 0.0
 }
@@ -57,7 +70,17 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
     /** Wohi item us ke neeche dobara (alag rate ke liye). */
     fun duplicate(item: EditItem) {
         val i = items.indexOf(item)
-        val copy = EditItem(item.name, "", "", item.unit)
+        val copy = EditItem(
+            item.name,
+            "",
+            "",
+            item.unit,
+            item.productId,
+            item.productName,
+            item.categoryName,
+            item.subcategoryName,
+            item.displayType
+        )
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
 }
@@ -67,7 +90,7 @@ private class EditRoom(initialName: String, initialItems: List<EditItem>) {
 fun EditBillScreen(
     bill: Bill,
     repository: BillRepository,
-        onClose: () -> Unit,
+    onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -86,14 +109,28 @@ fun EditBillScreen(
     var isSaving by remember { mutableStateOf(false) }
     val services = koinInject<AppServices>()
     var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
-
+    var showProduct by remember { mutableStateOf(bill.showProduct) }
+    var showCategory by remember { mutableStateOf(bill.showCategory) }
+    var showSubcategory by remember { mutableStateOf(bill.showSubcategory) }
+    var products by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var productStocks by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
     LaunchedEffect(Unit) {
+        val allProds = services.vendors.listProductsWithStock()
+        products = allProds
+        productStocks = allProds.associate { it.id to (it.liveStock ?: it.openingStock) }
         masterItems = services.settings.getMasterItems()
     }
     val rooms = remember {
         mutableStateListOf<EditRoom>().apply {
             bill.rooms.forEach { r ->
-                add(EditRoom(r.roomName, r.items.map { EditItem(it.name, it.qty, it.rate, it.unit) }))
+                add(EditRoom(r.roomName, r.items.map {
+                    EditItem(
+                        name = it.name, initialQty = it.qty, initialRate = it.rate, unit = it.unit,
+                        productId = it.productId, productName = it.productName,
+                        categoryName = it.categoryName, subcategoryName = it.subcategoryName,
+                        initialDisplayType = it.displayType,
+                    )
+                }))
             }
         }
     }
@@ -111,19 +148,19 @@ fun EditBillScreen(
 
     fun save() {
         if (isSaving) return
-        val incompleteItem = rooms.asSequence()
-            .flatMap { room -> room.items.map { room to it } }
+        val incompleteItem = rooms.asSequence().flatMap { room -> room.items.map { room to it } }
             .firstOrNull { (_, item) -> item.isIncomplete }
 
         val problem = when {
             customer.isBlank() -> "Customer name is required"
             rooms.none { r -> r.items.any { it.total > 0.0 } } -> "Enter the quantity and rate for at least one item."
             incompleteItem != null -> {
-                val roomName = incompleteItem.first.name.ifBlank { "Room" }
+                val sectionName = incompleteItem.first.name.ifBlank { "All Items" }
                 val itemName = incompleteItem.second.name
                 val missing = if (incompleteItem.second.qty.isBlank()) "Qty" else "Rate"
-                "Room \"$roomName\" -> \"$itemName\" $missing is missing."
+                "\"$sectionName\" -> \"$itemName\" $missing is missing."
             }
+
             discountValue > subtotal -> "Discount is greater than subtotal."
             receivedValue > grandTotal + 0.005 -> "Received is greater than total."
             else -> null
@@ -137,16 +174,32 @@ fun EditBillScreen(
         val finalRooms = rooms.map { room ->
             RoomData(
                 roomName = room.name.trim(),
-                items = room.items
-                    .filter { it.qty.isNotBlank() || it.rate.isNotBlank() }
-                    .map { ItemData(it.name, it.qty, it.rate, it.unit) }, // <--- it.unit YAHAN ADD KAREIN
+                items = room.items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }.map {
+                    ItemData(
+                        name = it.name, qty = it.qty, rate = it.rate, unit = it.unit,
+                        productId = it.productId, productName = it.productName,
+                        categoryName = it.categoryName, subcategoryName = it.subcategoryName,
+                        displayType = it.displayType,
+                    )
+                },
             )
         }.filter { it.items.isNotEmpty() }
 
         scope.launch {
             isSaving = true
             try {
-                repository.updateBill(bill.id, customer.trim(), phone, finalRooms, discountValue, extraValue, receivedValue)
+                repository.updateBill(
+                    bill.id,
+                    customer.trim(),
+                    phone,
+                    finalRooms,
+                    discountValue,
+                    extraValue,
+                    receivedValue,
+                    showProduct,
+                    showCategory,
+                    showSubcategory
+                )
                 onClose()
             } catch (e: Exception) {
                 isSaving = false
@@ -187,7 +240,12 @@ fun EditBillScreen(
                         Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                         Text("Rs ${formatMoney(grandTotal)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         if (pending > 0.005) {
-                            Text("Pending: Rs ${formatMoney(pending)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DueColor)
+                            Text(
+                                "Pending: Rs ${formatMoney(pending)}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DueColor
+                            )
                         }
                     }
                     Button(
@@ -283,15 +341,19 @@ fun EditBillScreen(
                 }
 
                 item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Column {
-                            Text("Rooms & Items", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text("${rooms.size} rooms", fontSize = 12.sp, color = Color.Gray)
+                            Text("Sections & Items", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("${rooms.size} section(s)", fontSize = 12.sp, color = Color.Gray)
                         }
                         TextButton(onClick = { rooms.add(EditRoom("", emptyList())); isDirty = true }) {
                             Icon(Icons.Default.AddCircle, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Room")
+                            Text("Add Section")
                         }
                     }
                 }
@@ -299,6 +361,7 @@ fun EditBillScreen(
                 items(rooms, key = { it.id }) { room ->
                     EditRoomCard(
                         room = room,
+                        productStocks = productStocks,   // ⬅️ YAHAN add karo
                         onChanged = { isDirty = true },
                         onAddItem = { addItemFor = room },
                         onDeleteRoom = { roomToDelete = room },
@@ -321,22 +384,28 @@ fun EditBillScreen(
         }
     }
 
+    LaunchedEffect(addItemFor) {
+        if (addItemFor != null) {
+            products = services.vendors.listProductsWithStock()
+            productStocks = products.associate { it.id to (it.liveStock ?: it.openingStock) }
+        }
+    }
     addItemFor?.let { room ->
         AddItemDialog(
-            masterItems = masterItems, // <--- YEH ADD KAREIN
-            onPick = { item ->
-                room.items.add(EditItem(item.name, "", "", item.unit)) // <--- item.unit pass karein
+            products = products, // <--- YEH ADD KAREIN
+            onPick = { p ->
+                room.items.add(EditItem(p.name, "", "", p.unit, p.id, p.name, p.categoryName, p.subcategoryName))
                 isDirty = true; addItemFor = null
             },
-            onManageItems = { addItemFor = null }, // Edit screen se manage items open nahi kar rahe
+            onManageProducts = { addItemFor = null }, // Edit screen se manage items open nahi kar rahe
             onDismiss = { addItemFor = null },
         )
     }
 
     roomToDelete?.let { room ->
         ConfirmDialog(
-            "Delete Room",
-            "\"${room.name.ifBlank { "Room" }}\" and all its items will be removed. Are you sure?",
+            "Delete Bill",
+            "\"${room.name.ifBlank { "All Items" }}\" and all its items will be removed. Are you sure?",
             "Delete",
             { rooms.remove(room); isDirty = true; roomToDelete = null },
             { roomToDelete = null },
@@ -349,7 +418,13 @@ fun EditBillScreen(
             title = { Text("Discard changes?") },
             text = { Text("You have unsaved changes that will be lost.") },
             dismissButton = { TextButton(onClick = { showDiscard = false }) { Text("Stay") } },
-            confirmButton = { TextButton(onClick = { showDiscard = false; onClose() }) { Text("Discard", color = Color.Red) } },
+            confirmButton = {
+                TextButton(onClick = { showDiscard = false; onClose() }) {
+                    Text(
+                        "Discard", color = Color.Red
+                    )
+                }
+            },
         )
     }
 }
@@ -369,7 +444,13 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
-private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () -> Unit, onDeleteRoom: () -> Unit) {
+private fun EditRoomCard(
+    room: EditRoom,
+    productStocks: Map<Long, Double>,
+    onChanged: () -> Unit,
+    onAddItem: () -> Unit,
+    onDeleteRoom: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(16.dp),
@@ -384,29 +465,42 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
                     value = room.name,
                     onValueChange = { room.name = it; onChanged() },
                     singleLine = true,
-                    textStyle = TextStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
+                    textStyle = TextStyle(
+                        fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.weight(1f).padding(vertical = 14.dp),
                     decorationBox = { inner ->
                         Box {
-                            if (room.name.isEmpty()) Text("Room name", fontSize = 16.sp, color = Color.Gray)
+                            if (room.name.isEmpty()) Text("All Items", fontSize = 16.sp, color = Color.Gray)
                             inner()
                         }
                     },
                 )
                 Text("Rs ${formatMoney(room.total)}", color = AppGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 IconButton(onClick = onDeleteRoom) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete room", tint = Color.Red)
+                    Icon(Icons.Default.Delete, contentDescription = "Delete bill", tint = Color.Red)
                 }
             }
             HorizontalDivider(color = Color(0xFFEEEEEE))
 
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 if (room.items.isEmpty()) {
-                    Text("No item in this room", fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        "No items added yet",
+                        fontSize = 13.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
                 }
                 room.items.forEachIndexed { index, item ->
                     key(item) {
                         val occurrence = room.items.take(index + 1).count { it.name == item.name }
+                        // Live stock + is item ki current qty (kyunke is bill ka qty pehle se minus ho chuka hai)
+                        // NAYA (sahi):
+                        val liveStock = productStocks[item.productId] ?: 0.0
+                        val availableStock = liveStock + (item.initialQty.toDoubleOrNull() ?: 0.0)
                         ItemEntryCard(
                             name = item.name,
                             occurrence = occurrence,
@@ -414,9 +508,15 @@ private fun EditRoomCard(room: EditRoom, onChanged: () -> Unit, onAddItem: () ->
                             onQtyChange = { item.qty = it; onChanged() },
                             rate = item.rate,
                             onRateChange = { item.rate = it; onChanged() },
+                            displayType = item.displayType,
+                            onDisplayTypeChange = { item.displayType = it; onChanged() },
+                            productName = item.productName,
+                            categoryName = item.categoryName,
+                            subcategoryName = item.subcategoryName,
                             total = item.total,
                             isIncomplete = item.isIncomplete,
                             unit = item.unit,
+                            stock = availableStock,   // ⬅️ YAHAN
                             onDuplicate = { room.duplicate(item); onChanged() },
                             onDelete = { room.items.remove(item); onChanged() },
                         )

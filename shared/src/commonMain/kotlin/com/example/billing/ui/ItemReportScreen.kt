@@ -26,6 +26,7 @@ import com.example.billing.AppServices
 import com.example.billing.data.BillRepository
 import com.example.billing.data.ItemReportRow
 import com.example.billing.model.MasterItem
+import com.example.billing.model.Product
 import com.example.billing.utils.PlatformBackHandler
 import com.example.billing.utils.displayDate
 import com.example.billing.utils.epochMillisToIsoDay
@@ -59,11 +60,9 @@ fun ItemReportScreen(
     var showFromPicker by remember { mutableStateOf(false) }
     var showToPicker by remember { mutableStateOf(false) }
     val services = koinInject<AppServices>()
-    var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
+    var products by remember { mutableStateOf<List<Product>>(emptyList()) }
+    LaunchedEffect(Unit) { products = services.vendors.listProducts() }
 
-    LaunchedEffect(Unit) {
-        masterItems = services.settings.getMasterItems()
-    }
     fun loadReport() {
         scope.launch {
             isLoading = true
@@ -200,7 +199,7 @@ fun ItemReportScreen(
     // --- Item Picker Dialog ---
     if (showItemPicker) {
         ItemPickerDialog(
-            masterItems = masterItems,
+            products = products,
             selectedItem = selectedItem,
             onPick = {
                 selectedItem = it
@@ -250,14 +249,14 @@ private fun DateSelectorButton(label: String, dateIso: String, modifier: Modifie
 
 @Composable
 private fun ItemPickerDialog(
-    masterItems: List<MasterItem>,
+    products: List<Product>,
     selectedItem: String?,
     onPick: (String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    val filteredItems = remember(query, masterItems) {
-        masterItems.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
+    val filteredItems = remember(query, products) {
+        products.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
     }
 
     AlertDialog(

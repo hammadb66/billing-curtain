@@ -361,14 +361,12 @@ fun HistoryScreen(
                                                 printer.print(
                                                     title = "Invoice_${bill.customer.filter { it.isLetterOrDigit() || it == ' ' }}",
                                                     rows = buildInvoiceRows(
-                                                        customer = bill.customer,
-                                                        phone = bill.phone,
-                                                        date = displayDate(bill.date),
-                                                        rooms = bill.rooms,
-                                                        discount = bill.discount,
-                                                        extraCharges = bill.extraCharges,
-                                                        invoiceNo = bill.invoiceText,
-                                                        paidAmount = bill.paidAmount,
+                                                        customer = bill.customer, phone = bill.phone, date = displayDate(bill.date),
+                                                        rooms = bill.rooms, discount = bill.discount, extraCharges = bill.extraCharges,
+                                                        invoiceNo = bill.invoiceText, paidAmount = bill.paidAmount,
+                                                        showProduct = bill.showProduct,
+                                                        showCategory = bill.showCategory,
+                                                        showSubcategory = bill.showSubcategory,
                                                     ),
                                                 )
                                             } catch (e: Throwable) {
@@ -597,8 +595,14 @@ private fun ModernBillCard(
                 HorizontalDivider(color = Color(0xFFF1F5F9))
                 Spacer(Modifier.size(6.dp))
 
-                bill.rooms.forEach { room -> RoomTableCard(room) }
-
+                bill.rooms.forEach { room ->
+                    RoomTableCard(
+                        room = room,
+                        showProduct = bill.showProduct,
+                        showCategory = bill.showCategory,
+                        showSubcategory = bill.showSubcategory,
+                    )
+                }
                 Column(
                     Modifier.fillMaxWidth().padding(top = 8.dp).background(Color(0xFFF8FAFC)).padding(16.dp),
                 ) {
@@ -664,38 +668,64 @@ private fun ModernBillCard(
 }
 
 @Composable
-private fun RoomTableCard(room: RoomData) {
+private fun RoomTableCard(
+    room: RoomData,
+    showProduct: Boolean,
+    showCategory: Boolean,
+    showSubcategory: Boolean,
+) {
     val items = room.validItems
     if (items.isEmpty()) return
 
     Column(
-        Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp)),
+        Modifier
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp)),
     ) {
+        // Room header
         Text(
-            "ROOM: ${room.roomName.ifBlank { "ROOM" }.uppercase()}",
-            modifier = Modifier.fillMaxWidth().background(Color(0xFFF1F5F9), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+            room.roomName.ifBlank { "ALL ITEMS" }.uppercase(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF1F5F9), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF475569),
         )
+
+        // Column headers
         Row(Modifier.fillMaxWidth().padding(12.dp, 8.dp, 12.dp, 4.dp)) {
             Text("ITEM", Modifier.weight(3.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
             Text("QTY", Modifier.weight(1.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.Center)
             Text("RATE", Modifier.weight(2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.End)
             Text("TOTAL", Modifier.weight(2.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.End)
         }
+
         HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = Color(0xFFF1F5F9))
+
+        // Items — yahan displayName use ho raha hai
         items.forEach { item ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Text(item.name, Modifier.weight(3.5f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    item.displayName(showProduct, showCategory, showSubcategory),   // ← YAHI change hai
+                    Modifier.weight(3.5f), fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                )
                 Text(formatQty(item.qtyValue), Modifier.weight(1.5f), fontSize = 13.sp, textAlign = TextAlign.Center, color = Color.DarkGray)
                 Text(formatMoney(item.rateValue), Modifier.weight(2f), fontSize = 13.sp, textAlign = TextAlign.End, color = Color.DarkGray)
                 Text(formatMoney(item.total), Modifier.weight(2.5f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), textAlign = TextAlign.End)
             }
         }
+
         HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = Color(0xFFF1F5F9))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Room Total", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+
+        // Room total
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Section Total", fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
             Text("Rs ${formatMoney(items.sumOf { it.total })}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AppGreen)
         }
     }

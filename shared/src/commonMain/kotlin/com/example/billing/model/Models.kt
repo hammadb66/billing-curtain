@@ -8,10 +8,31 @@ data class ItemData(
     val qty: String = "",
     val rate: String = "",
     val unit: String = "",
+    // NEW: display-related
+    val productId: Long? = null,
+    val productName: String = "",
+    val categoryName: String = "",
+    val subcategoryName: String = "",
+    val displayType: String = "default", // "default" | "category" | "subcategory" | "product"
 ) {
     val qtyValue: Double get() = qty.toDoubleOrNull() ?: 0.0
     val rateValue: Double get() = rate.toDoubleOrNull() ?: 0.0
     val total: Double get() = qtyValue * rateValue
+
+    /** Line item ka display name bill/PDF me. */
+    fun displayName(showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean): String {
+        return when (displayType) {
+            "product" -> productName.ifBlank { name }
+            "category" -> categoryName.ifBlank { name }
+            "subcategory" -> subcategoryName.ifBlank { name }
+            else -> when {
+                showProduct && productName.isNotBlank() -> productName
+                showCategory && categoryName.isNotBlank() -> categoryName
+                showSubcategory && subcategoryName.isNotBlank() -> subcategoryName
+                else -> name
+            }
+        }
+    }
 }
 
 
@@ -46,6 +67,10 @@ data class Bill(
     val paidAmount: Double? = null,
     /** Invoice number jo customer ko diya gaya, maslan "hammad-05". Purane bills me khali (tab "#id" dikhta hai). */
     val invoiceLabel: String = "",
+    // NEW: display options saved with the bill
+    val showProduct: Boolean = false,
+    val showCategory: Boolean = false,
+    val showSubcategory: Boolean = false,
 ) {
     /** Screen / PDF / CSV me jo invoice number dikhana hai. */
     val invoiceText: String get() = invoiceLabel.ifBlank { "#$id" }

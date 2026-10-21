@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +41,7 @@ import com.example.billing.data.masterItems
 import com.example.billing.model.BillingFormState
 import com.example.billing.model.ItemState
 import com.example.billing.model.MasterItem
+import com.example.billing.model.Product
 import com.example.billing.model.RoomState
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
@@ -65,6 +67,8 @@ fun BillingScreen(
     onOpenManageItems: () -> Unit,
     onOpenItemReport: () -> Unit,
     userName: String,
+    onOpenVendors: () -> Unit,        // ← NAYA
+    onOpenPurchases: () -> Unit,      // ← NAYA
     isDeveloper: Boolean
 ) {
     val scope = rememberCoroutineScope()
@@ -78,18 +82,14 @@ fun BillingScreen(
     // Koin injects
     val viewModel: BillingViewModel = koinViewModel()
     val services = koinInject<AppServices>()
-
-    // ViewModel se state
+    var products by remember { mutableStateOf<List<Product>>(emptyList()) }
+    LaunchedEffect(Unit) { products = services.vendors.listProductsWithStock() }    // ViewModel se state
     val form = viewModel.form
-    val masterItems by viewModel.masterItems.collectAsState()
     val previousBalance by viewModel.previousBalance.collectAsState()
 
     // Duplicate LaunchedEffect hata dein, sirf ye rakhein:
     LaunchedEffect(form.phone) {
         viewModel.loadCustomerInfo(form.phone)
-    }
-    LaunchedEffect(Unit) {
-        viewModel.reloadMasterItems()
     }
 
         PlatformBackHandler {
@@ -113,33 +113,41 @@ fun BillingScreen(
             })
     }
     val filledItems by remember { derivedStateOf { form.rooms.sumOf { r -> r.items.count { it.total > 0 } } } }
-    val summary = "${form.rooms.size} Room(s) | $filledItems Item(s)"
+    val summary = "${form.rooms.size} Section(s) | $filledItems Item(s)"
 
     fun printAndSave() {
         if (isPrinting) return
         val problem = validateForm(form)
         if (problem != null) { message = problem; return }
-
+        val savedShowProduct = form.showProduct
+        val savedShowCategory = form.showCategory
+        val savedShowSubcategory = form.showSubcategory
         isPrinting = true
         viewModel.saveBill(
             userName = userName,
-            // Yahan parameters update kar diye hain (iso add kiya hai)
+            showProduct = savedShowProduct,
+            showCategory = savedShowCategory,
+            showSubcategory = savedShowSubcategory,
             onSuccess = { invoiceNo, customer, phone, iso, rooms, discVal, extraVal, paid ->
-                form.reset() // UI reset
+                form.reset()
                 scope.launch {
                     var snackText: String? = null
                     try {
                         val printed = printer.print(
                             title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
                             rows = buildInvoiceRows(
-                                customer, phone, displayDate(iso),
-                                rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid
+                                customer, phone, displayDate(iso), rooms, discVal, extraVal,
+                                invoiceNo = invoiceNo, paidAmount = paid,
+                                showProduct = savedShowProduct,
+                                showCategory = savedShowCategory,
+                                showSubcategory = savedShowSubcategory,
                             )
                         )
                         snackText = if (printed) "Bill printed & saved!" else "Bill saved. Print cancelled."
                     } catch (e: Throwable) {
                         snackText = "Bill saved, but print failed."
                     }
+                    products = services.vendors.listProductsWithStock()   // ⬅️ YAHAN
                     isPrinting = false
                     snackText?.let { snackbar.showSnackbar(it) }
                 }
@@ -173,6 +181,8 @@ fun BillingScreen(
                             onOpenHistory = onOpenHistory,
                             onOpenItemReport = onOpenItemReport,
                             onOpenManageItems = onOpenManageItems,
+                            onOpenVendors = onOpenVendors,
+                            onOpenPurchases = onOpenPurchases,
                             onLogout = onLogout,
                             userName = userName,
                             isDeveloper = isDeveloper,
@@ -182,7 +192,7 @@ fun BillingScreen(
                         HorizontalDivider(color = Color(0xFFEEEEEE))
 
                         FinancialAdjustmentsBlock(form, enabled = !isPrinting)
-
+                        DisplayOptionsBlock(form)          // ← ye add karo
                         HorizontalDivider(color = Color(0xFFEEEEEE))
                         AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
                         if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance)
@@ -226,6 +236,8 @@ fun BillingScreen(
                                 onOpenHistory = onOpenHistory,
                                 onOpenItemReport = onOpenItemReport,
                                 onOpenManageItems = onOpenManageItems,
+                                onOpenVendors = onOpenVendors,
+                                onOpenPurchases = onOpenPurchases,
                                 onLogout = onLogout,
                                 userName = userName,
                                 isDeveloper = isDeveloper,
@@ -234,6 +246,8 @@ fun BillingScreen(
                             )
                         }
                         item { FinancialAdjustmentsBlock(form, enabled = !isPrinting) }
+                        item { DisplayOptionsBlock(form) } // ← ye add karo
+
                         roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
@@ -277,26 +291,29 @@ fun BillingScreen(
         }
     }
 
+    LaunchedEffect(addItemForRoom) {
+        if (addItemForRoom != null) {
+            products = services.vendors.listProductsWithStock()
+        }
+    }
+
     addItemForRoom?.let { room ->
         AddItemDialog(
-            masterItems = masterItems,
-            onPick = { item ->
-                room.addItem(item.name, item.unit)
+            products = products,
+            onPick = { p ->
+                // Direct liveStock use karein, async call ki zaroorat nahi
+                room.addProduct(p, p.liveStock ?: p.openingStock)
                 addItemForRoom = null
             },
-            onManageItems = {
-                addItemForRoom = null
-                onOpenManageItems()
-            },
+            onManageProducts = { addItemForRoom = null; onOpenManageItems() },
             onDismiss = { addItemForRoom = null },
         )
     }
 
     message?.let { (title, text) -> MessageDialog(title, text) { message = null } }
     roomToDelete?.let { room ->
-        ConfirmDialog(
-            "Delete Room",
-            "Are you sure you want to delete this room?",
+        ConfirmDialog(  "Delete Bill",
+            "Are you sure you want to delete this bill?",
             "Confirm",
             { form.removeRoom(room); roomToDelete = null },
             { roomToDelete = null })
@@ -365,12 +382,35 @@ private fun LazyListScope.roomItems(
     }
 }
 
+
+@Composable
+private fun DisplayOptionsBlock(form: BillingFormState) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Bill Display Options (Select One)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showProduct, onClick = { form.showProduct = true; form.showCategory = false; form.showSubcategory = false })
+                Text("Show Product Name", fontSize = 12.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showCategory, onClick = { form.showProduct = false; form.showCategory = true; form.showSubcategory = false })
+                Text("Show Category", fontSize = 12.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = form.showSubcategory, onClick = { form.showProduct = false; form.showCategory = false; form.showSubcategory = true })
+                Text("Show Subcategory", fontSize = 12.sp)
+            }
+        }
+    }
+}
 @Composable
 private fun HeaderBlock(
     form: BillingFormState,
     onOpenHistory: () -> Unit,
     onOpenItemReport: () -> Unit,
     onOpenManageItems: () -> Unit,
+    onOpenVendors: () -> Unit,          // ← NAYA
+    onOpenPurchases: () -> Unit,
     onLogout: () -> Unit,
     userName: String,
     isDeveloper: Boolean,
@@ -417,7 +457,7 @@ private fun HeaderBlock(
         ) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Add New Room", fontWeight = FontWeight.Bold)
+            Text("Add New Section", fontWeight = FontWeight.Bold)
         }
         OutlinedButton(
             onClick = onOpenHistory,
@@ -436,14 +476,35 @@ private fun HeaderBlock(
         ) {
             Text("Item Usage Report", fontWeight = FontWeight.Bold, color = AppGreen)
         }
+        // ⬇️ TEXT BADLA: "Add New Items" → "Manage Products"
         OutlinedButton(
             onClick = onOpenManageItems,
             enabled = enabled,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Add New Items", fontWeight = FontWeight.Bold, color = AppGreen)
+            Text("Manage Products", fontWeight = FontWeight.Bold, color = AppGreen)
         }
+
+        // ========== NAYE 2 BUTTONS ==========
+        OutlinedButton(
+            onClick = onOpenVendors,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Vendors", fontWeight = FontWeight.Bold, color = AppGreen)
+        }
+
+        OutlinedButton(
+            onClick = onOpenPurchases,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Purchases", fontWeight = FontWeight.Bold, color = AppGreen)
+        }
+
         HorizontalDivider(color = Color(0xFFEEEEEE))
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -536,7 +597,7 @@ private fun RoomCard(
                 if (index == 0) {
                     Box(Modifier.size(36.dp).background(AppGreen, CircleShape), contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Default.Home,
+                            Icons.Default.Receipt,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
@@ -546,7 +607,7 @@ private fun RoomCard(
                     IconButton(onClick = { onDelete(room) }) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "Delete room",
+                            contentDescription = "Delete bill",
                             tint = Color.Red,
                             modifier = Modifier.size(18.dp)
                         )
@@ -564,7 +625,7 @@ private fun RoomCard(
                     decorationBox = { inner ->
                         Box {
                             if (room.name.isEmpty()) Text(
-                                "Room Name", fontSize = 16.sp, color = Color.Gray
+                                "All Items", fontSize = 16.sp, color = Color.Gray
                             ); inner()
                         }
                     },
@@ -583,7 +644,7 @@ private fun RoomCard(
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (room.items.isEmpty()) {
                         Text(
-                            "No item in this room",
+                            "No items added yet",
                             fontSize = 13.sp,
                             color = Color.Gray,
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -603,6 +664,12 @@ private fun RoomCard(
                                         total = item.total,
                                         isIncomplete = item.isIncomplete,
                                         unit = item.unit,
+                                        displayType = item.displayType,
+                                        onDisplayTypeChange = { item.displayType = it },
+                                        productName = item.productName,
+                                        categoryName = item.categoryName,
+                                        subcategoryName = item.subcategoryName,
+                                        stock = item.stock,
                                         onDuplicate = { room.duplicateItem(item) },
                                         onDelete = { room.removeItem(item) },
                                     )
@@ -636,8 +703,8 @@ private fun validateForm(form: BillingFormState): Pair<String, String>? {
     for (room in form.rooms) {
         for (item in room.items) {
             if (item.isIncomplete) {
-                val rName = room.name.ifBlank { "Room" }
-                return "Incomplete Item" to "Room \"$rName\" -> \"${item.name}\" qty or rate is blank."
+                val sectionName = room.name.ifBlank { "All Items" }
+                return "Incomplete Item" to "\"$sectionName\" -> \"${item.name}\" qty or rate is blank."
             }
         }
     }

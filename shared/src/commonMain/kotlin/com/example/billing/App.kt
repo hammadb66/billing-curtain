@@ -40,6 +40,11 @@ import com.example.billing.ui.HistoryScreen
 import com.example.billing.ui.ItemReportScreen
 import com.example.billing.ui.LoginScreen
 import com.example.billing.ui.ManageItemsScreen
+import com.example.billing.ui.ProductListScreen
+import com.example.billing.ui.PurchaseEditScreen
+import com.example.billing.ui.PurchaseListScreen
+import com.example.billing.ui.VendorDetailScreen
+import com.example.billing.ui.VendorListScreen
 import com.example.billing.utils.Branding
 import com.example.billing.utils.FileExporter
 import kotlinx.coroutines.delay
@@ -150,7 +155,45 @@ fun App(
 
                     is Gate.LoggedIn -> {
                         NavHost(navController = navController, startDestination = BillingRoute.Billing) {
-
+                            composable<BillingRoute.Vendors> {
+                                VendorListScreen(
+                                    repository = services.vendors,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenVendor = { id -> navController.navigate(BillingRoute.VendorDetail(id)) },
+                                    onAddVendor = { /* handled in screen via dialog */ },
+                                )
+                            }
+                            composable<BillingRoute.VendorDetail> { entry ->
+                                val route = entry.toRoute<BillingRoute.VendorDetail>()
+                                VendorDetailScreen(
+                                    repository = services.vendors,
+                                    vendorId = route.vendorId,
+                                    onBack = { navController.popBackStack() },
+                                    printer=printer
+                                )
+                            }
+                            composable<BillingRoute.Products> {
+                                ProductListScreen(
+                                    repository = services.vendors,
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
+                            composable<BillingRoute.Purchases> {
+                                PurchaseListScreen(
+                                    repository = services.vendors,
+                                    onBack = { navController.popBackStack() },
+                                    onOpen = { id -> navController.navigate(BillingRoute.PurchaseEdit(id)) },
+                                )
+                            }
+                            composable<BillingRoute.PurchaseEdit> { entry ->
+                                val route = entry.toRoute<BillingRoute.PurchaseEdit>()
+                                PurchaseEditScreen(
+                                    repository = services.vendors,
+                                    purchaseId = route.purchaseId,
+                                    onClose = { navController.popBackStack() },
+                                    printer = printer,
+                                )
+                            }
                             composable<BillingRoute.Billing> {
                                 BillingScreen(
                                     printer = printer,
@@ -159,8 +202,10 @@ fun App(
                                         val dev = g.dev
                                         gate = if (dev != null) Gate.Admin(dev) else Gate.Login
                                     },
-                                    onOpenManageItems = { navController.navigate(BillingRoute.ManageItems) },
+                                    onOpenManageItems = { navController.navigate(BillingRoute.Products) },   // ← Ab Products khulega
                                     onOpenItemReport = { navController.navigate(BillingRoute.ItemReport) },
+                                    onOpenVendors = { navController.navigate(BillingRoute.Vendors) },       // ← NAYA
+                                    onOpenPurchases = { navController.navigate(BillingRoute.Purchases) },   // ← NAYA                                    onOpenItemReport = { navController.navigate(BillingRoute.ItemReport) },
                                     userName = g.user.username,
                                     isDeveloper = g.dev != null
                                 )

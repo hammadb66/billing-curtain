@@ -65,6 +65,7 @@ class BillRepository(database: BillingDatabase) {
         discount: Double,
         extraCharges: Double,
         paidAmount: Double?,
+        showProduct: Long, showCategory: Long, showSubcategory: Long,
         label: String?,
     ): Bill = Bill(
         id = id,
@@ -76,6 +77,9 @@ class BillRepository(database: BillingDatabase) {
         extraCharges = extraCharges,
         paidAmount = paidAmount,
         invoiceLabel = label.orEmpty(),
+        showProduct = showProduct != 0L,
+        showCategory = showCategory != 0L,
+        showSubcategory = showSubcategory != 0L,
     )
 
     // ---------- Invoice number: "<user>-<NN>" ----------
@@ -120,6 +124,9 @@ class BillRepository(database: BillingDatabase) {
         extraCharges: Double,
         paidAmount: Double?,
         invoicePrefix: String,
+        showProduct: Boolean = false,
+        showCategory: Boolean = false,
+        showSubcategory: Boolean = false,
     ): String {
         val label = withContext(Dispatchers.Default) {
             queries.transactionWithResult {
@@ -131,6 +138,9 @@ class BillRepository(database: BillingDatabase) {
                     discount,
                     extraCharges,
                     paidAmount,
+                    if (showProduct) 1L else 0L,
+                    if (showCategory) 1L else 0L,
+                    if (showSubcategory) 1L else 0L,
                 )
                 val newId = queries.lastInsertedId().executeAsOne()
                 syncQ.insertSync(newId, newRemoteId(), 1L, 0L, now())
@@ -151,6 +161,9 @@ class BillRepository(database: BillingDatabase) {
         discount: Double,
         extraCharges: Double,
         paidAmount: Double?,
+        showProduct: Boolean = false,
+        showCategory: Boolean = false,
+        showSubcategory: Boolean = false,
     ) {
         withContext(Dispatchers.Default) {
             queries.transaction {
@@ -161,7 +174,10 @@ class BillRepository(database: BillingDatabase) {
                     discount,
                     extraCharges,
                     paidAmount,
-                    id,
+                    if (showProduct) 1L else 0L,
+                    if (showCategory) 1L else 0L,
+                    if (showSubcategory) 1L else 0L,
+                    id,   // ← ID aakhir me
                 )
                 syncQ.markDirty(now(), id)
             }
@@ -238,14 +254,12 @@ class BillRepository(database: BillingDatabase) {
                     for (b in backupList) {
                         val sig = signature(b.date, b.phone, b.customer, b.rooms.sumOf { it.total }, b.discount, b.extraCharges)
                         if (!existing.add(sig)) continue
+                        val sp = if (b.showProduct) 1L else 0L
+                        val sc = if (b.showCategory) 1L else 0L
+                        val ss = if (b.showSubcategory) 1L else 0L
                         queries.insertBill(
-                            b.customer,
-                            b.phone,
-                            json.encodeToString(roomsSerializer, b.rooms),
-                            b.date,
-                            b.discount,
-                            b.extraCharges,
-                            b.paidAmount,
+                            b.customer, b.phone, json.encodeToString(roomsSerializer, b.rooms),
+                            b.date, b.discount, b.extraCharges, b.paidAmount, sp, sc, ss,
                         )
                         val newId = queries.lastInsertedId().executeAsOne()
                         syncQ.insertSync(newId, newRemoteId(), 1L, 0L, now())
@@ -363,6 +377,9 @@ class BillRepository(database: BillingDatabase) {
         queries.transaction {
             for ((rid, r) in remote) {
                 val row = rows[rid]
+                val sp = if (r.showProduct) 1L else 0L
+                val sc = if (r.showCategory) 1L else 0L
+                val ss = if (r.showSubcategory) 1L else 0L
                 if (row == null) {
                     if (r.deleted) continue
                     // Label wale bills me local id ka koi matlab nahi (nayi id); purane bills me wohi number rakhne ki koshish
@@ -370,11 +387,12 @@ class BillRepository(database: BillingDatabase) {
                     else r.invoiceNo.takeIf { it > 0 && queries.selectById(it).executeAsOneOrNull() == null }
                     val roomsJson = json.encodeToString(roomsSerializer, r.rooms)
                     val newId: Long
+
                     if (wanted != null) {
-                        queries.insertBillWithId(wanted, r.customer, r.phone, roomsJson, r.date, r.discount, r.extraCharges, r.paidAmount)
+                        queries.insertBillWithId(wanted, r.customer, r.phone, roomsJson, r.date, r.discount, r.extraCharges, r.paidAmount, sp, sc, ss)
                         newId = wanted
                     } else {
-                        queries.insertBill(r.customer, r.phone, roomsJson, r.date, r.discount, r.extraCharges, r.paidAmount)
+                        queries.insertBill(r.customer, r.phone, roomsJson, r.date, r.discount, r.extraCharges, r.paidAmount, sp, sc, ss)
                         newId = queries.lastInsertedId().executeAsOne()
                     }
                     syncQ.insertSync(newId, rid, 0L, now(), r.updatedAt)
@@ -405,14 +423,12 @@ class BillRepository(database: BillingDatabase) {
                         }
                         overwritten++
                     }
+                    // AFTER
                     queries.updateBill(
-                        r.customer,
-                        r.phone,
-                        json.encodeToString(roomsSerializer, r.rooms),
-                        r.discount,
-                        r.extraCharges,
-                        r.paidAmount,
-                        row.billId,
+                        r.customer, r.phone, json.encodeToString(roomsSerializer, r.rooms),
+                        r.discount, r.extraCharges, r.paidAmount,
+                        sp, sc, ss,
+                        row.billId,   // ← ID aakhir me
                     )
                     syncQ.insertSync(row.billId, rid, 0L, now(), r.updatedAt)
                     if (r.invoiceLabel.isNotBlank() && syncQ.selectLabel(row.billId).executeAsOneOrNull() == null) {
@@ -448,7 +464,11 @@ class BillRepository(database: BillingDatabase) {
                         queries.updateBill(
                             bill.customer, bill.phone,
                             json.encodeToString(roomsSerializer, updatedRooms),
-                            bill.discount, bill.extraCharges, bill.paidAmount, bill.id
+                            bill.discount, bill.extraCharges, bill.paidAmount,
+                            if (bill.showProduct) 1L else 0L,
+                            if (bill.showCategory) 1L else 0L,
+                            if (bill.showSubcategory) 1L else 0L,
+                            bill.id,   // ← ID aakhir me
                         )
                         syncQ.markDirty(now(), bill.id) // Sync ke liye nishan lagaya
                         changedCount++
