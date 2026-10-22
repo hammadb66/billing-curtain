@@ -37,12 +37,12 @@ import com.example.billing.ui.CheckingScreen
 import com.example.billing.ui.EditBillScreen
 import com.example.billing.ui.FileImporter
 import com.example.billing.ui.HistoryScreen
-import com.example.billing.ui.ItemReportScreen
 import com.example.billing.ui.LoginScreen
 import com.example.billing.ui.ManageItemsScreen
 import com.example.billing.ui.ProductListScreen
 import com.example.billing.ui.PurchaseEditScreen
 import com.example.billing.ui.PurchaseListScreen
+import com.example.billing.ui.ReportScreen
 import com.example.billing.ui.VendorDetailScreen
 import com.example.billing.ui.VendorListScreen
 import com.example.billing.utils.Branding
@@ -245,8 +245,8 @@ fun App(
                             }
 
                             composable<BillingRoute.ItemReport> {
-                                ItemReportScreen(
-                                    repository = services.bills,
+                                ReportScreen(
+                                    billRepo = services.bills,
                                     onBack = { navController.popBackStack() }
                                 )
                             }

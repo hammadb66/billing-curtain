@@ -83,13 +83,10 @@ fun VendorListScreen(
                     }
 
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
-                        OutlinedTextField(
+                        CompactSearchField(
                             value = query, onValueChange = { query = it },
-                            placeholder = { Text("Search vendor...", fontSize = 13.sp) },
-                            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.width(350.dp).height(44.dp),
+                            placeholder = "Search vendor...",
+                            modifier = Modifier.width(350.dp)
                         )
                     }
                     Spacer(Modifier.height(8.dp))

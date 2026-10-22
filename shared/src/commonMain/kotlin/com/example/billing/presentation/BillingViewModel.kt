@@ -19,29 +19,21 @@ class BillingViewModel(
 ) : ViewModel() {
 
     val form = BillingFormState()
-
     private val _masterItems = MutableStateFlow<List<MasterItem>>(emptyList())
     val masterItems: StateFlow<List<MasterItem>> = _masterItems.asStateFlow()
-
     private val _previousBalance = MutableStateFlow(0.0)
     val previousBalance: StateFlow<Double> = _previousBalance.asStateFlow()
 
-    init {
-        viewModelScope.launch {
-            _masterItems.value = settings.getMasterItems()
-        }
-    }
+    init { viewModelScope.launch { _masterItems.value = settings.getMasterItems() } }
 
-
-    fun setDisplayOption(option: String) {
-        applyDisplayOption(option)
-    }
+    fun setDisplayOption(option: String) { applyDisplayOption(option) }
 
     private fun applyDisplayOption(option: String) {
-        form.showProduct     = option == "product"
-        form.showCategory    = option == "category"
+        form.showProduct = option == "product"
+        form.showCategory = option == "category"
         form.showSubcategory = option == "subcategory"
     }
+
     fun loadCustomerInfo(phone: String) {
         if (phone.length >= 7) {
             viewModelScope.launch {
@@ -49,37 +41,24 @@ class BillingViewModel(
                 _previousBalance.value = info?.previousBalance ?: 0.0
                 if (info != null && form.customer.isBlank()) form.customer = info.name
             }
-        } else {
-            _previousBalance.value = 0.0
-        }
+        } else _previousBalance.value = 0.0
     }
 
-    // Yahan hum UI ko print karne ke liye data wapas de rahe hain
     fun saveBill(
-        userName: String,
-        showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean,  // NEW
+        userName: String, salesmanId: Long?,
+        showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean,
         onSuccess: (String, String, String, String, List<RoomData>, Double, Double, Double) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
             try {
-                val customer = form.customer.trim()
-                val phone = form.phone
-                val rooms = form.toRoomDataList()
-                val iso = nowIso()
-                val discVal = form.discountValue
-                val extraVal = form.extraValue
-                val paid = form.receivedValue
-
                 val invoiceNo = repository.insertBill(
-                    customer, phone, rooms, iso, discVal, extraVal, paid,
-                    userName, showProduct, showCategory, showSubcategory,
+                    form.customer.trim(), form.phone, form.address.trim(), form.phone2.trim(), form.accountNo.trim(),
+                    form.toRoomDataList(), nowIso(), form.discountValue, form.extraValue, form.receivedValue, salesmanId,
+                    userName, showProduct, showCategory, showSubcategory
                 )
-                // Save kamyab hone par UI ko data bhej diya
-                onSuccess(invoiceNo, customer, phone, iso, rooms, discVal, extraVal, paid)
-            } catch (e: Exception) {
-                onError(e.message ?: "Error")
-            }
+                onSuccess(invoiceNo, form.customer.trim(), form.phone, nowIso(), form.toRoomDataList(), form.discountValue, form.extraValue, form.receivedValue)
+            } catch (e: Exception) { onError(e.message ?: "Error") }
         }
     }
 }

@@ -9,27 +9,20 @@ import kotlinx.serialization.json.Json
 /** Poore backup ke liye ek bill ki shakal (JSON me save hoti hai). */
 @Serializable
 data class BillBackup(
-    val id: Long,
-    val customer: String,
-    val phone: String,
-    val date: String,
-    val rooms: List<RoomData>,
-    val discount: Double,
-    val extraCharges: Double,
-    val paidAmount: Double? = null,
-    val invoiceLabel: String = "",
-    val showProduct: Boolean = false,
-    val showCategory: Boolean = false,
-    val showSubcategory: Boolean = false,
+    val id: Long, val customer: String, val phone: String,
+    val address: String = "", val phone2: String = "", val accountNo: String = "", // NAYA
+    val date: String, val rooms: List<RoomData>, val discount: Double, val extraCharges: Double,
+    val paidAmount: Double? = null, val invoiceLabel: String = "",
+    val showProduct: Boolean = false, val showCategory: Boolean = false, val showSubcategory: Boolean = false,
+    val salesmanId: Long? = null
 )
 
-private val backupJson = Json { prettyPrint = true; encodeDefaults = true }
-
 fun billsToBackupJson(bills: List<Bill>): String =
-    backupJson.encodeToString(
-        ListSerializer(BillBackup.serializer()),
-        bills.map { BillBackup(it.id, it.customer, it.phone, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount, it.invoiceLabel,it.showProduct,it.showCategory,it.showSubcategory) },
-    )
+    backupJson.encodeToString(ListSerializer(BillBackup.serializer()), bills.map {
+        BillBackup(it.id, it.customer, it.phone, it.address, it.phone2, it.accountNo, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount, it.invoiceLabel, it.showProduct, it.showCategory, it.showSubcategory, it.salesmanId)
+    })
+
+private val backupJson = Json { prettyPrint = true; encodeDefaults = true }
 
 private fun csvCell(text: String): String =
     if (text.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + text.replace("\"", "\"\"") + "\"" else text

@@ -531,136 +531,98 @@ private fun ModernBillCard(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(6.dp),
         border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), // Flat design
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
-            // ---------- Header ----------
-            Row(
-                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(40.dp).background(statusColor.copy(alpha = 0.1f), CircleShape), contentAlignment = Alignment.Center) {
-                    Text(
-                        bill.customer.trim().take(1).uppercase().ifBlank { "?" },
-                        fontWeight = FontWeight.Bold, fontSize = 16.sp, color = statusColor,
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
-
-                // Customer Details
-                Column(Modifier.weight(2f)) {
-                    Text(bill.customer, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1E293B), maxLines = 1)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Phone, null, modifier = Modifier.size(12.dp), tint = Color.Gray)
-                        Spacer(Modifier.width(4.dp))
-                        Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray)
+            BoxWithConstraints {
+                val isWide = maxWidth > 600.dp
+                if (isWide) {
+                    // Desktop Layout (Wahi purana)
+                    Row(
+                        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(40.dp).background(statusColor.copy(alpha = 0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                            Text(bill.customer.trim().take(1).uppercase().ifBlank { "?" }, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = statusColor)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(2f)) {
+                            Text(bill.customer, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1E293B), maxLines = 1)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Phone, null, modifier = Modifier.size(12.dp), tint = Color.Gray)
+                                Spacer(Modifier.width(4.dp))
+                                Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray)
+                            }
+                        }
+                        Column(Modifier.weight(1.5f)) {
+                            Text(bill.invoiceText, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
+                            Text(displayDate(bill.date), fontSize = 12.sp, color = Color.Gray)
+                        }
+                        Column(Modifier.weight(1.5f), horizontalAlignment = Alignment.Start) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (pending) AmountTag("Pending", DueColor) else AmountTag("PAID", PaidColor)
+                            }
+                        }
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                            Text("Rs ${formatMoney(bill.grandTotal)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0F172A))
+                            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                        }
                     }
-                }
-
-                // Invoice & Date
-                Column(Modifier.weight(1.5f)) {
-                    Text(bill.invoiceText, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
-                    Text(displayDate(bill.date), fontSize = 12.sp, color = Color.Gray)
-                }
-
-                // Status Tags
-                Column(Modifier.weight(1.5f), horizontalAlignment = Alignment.Start) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (pending) AmountTag("Pending", DueColor) else AmountTag("PAID", PaidColor)
-                    }
-                    if (bill.discount > 0.0 || bill.extraCharges > 0.0) {
-                        Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (bill.discount > 0.0) Text("-${formatMoney(bill.discount)}", fontSize = 11.sp, color = DiscountColor)
-                            if (bill.extraCharges > 0.0) Text("+${formatMoney(bill.extraCharges)}", fontSize = 11.sp, color = ExtraColor)
+                } else {
+                    // Mobile Layout (Stacked)
+                    Column(
+                        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(40.dp).background(statusColor.copy(alpha = 0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                                Text(bill.customer.trim().take(1).uppercase().ifBlank { "?" }, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = statusColor)
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(bill.customer, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1E293B))
+                                Text(bill.phone.ifBlank { "No Number" }, fontSize = 12.sp, color = Color.Gray)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Rs ${formatMoney(bill.grandTotal)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A))
+                                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFFF1F5F9))
+                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                            Column {
+                                Text(bill.invoiceText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                Text(displayDate(bill.date), fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (pending) AmountTag("Pending", DueColor) else AmountTag("PAID", PaidColor)
+                            }
                         }
                     }
                 }
-
-                // Amount
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                    Text("Rs ${formatMoney(bill.grandTotal)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0F172A))
-                    Icon(
-                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp)
-                    )
-                }
             }
 
-            // ---------- Detail ----------
+            // Detail part (Remains same)
             if (expanded) {
                 HorizontalDivider(color = Color(0xFFF1F5F9))
-
-                // Table-like Body
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     bill.rooms.forEach { room ->
                         RoomTableCard(room, bill.showProduct, bill.showCategory, bill.showSubcategory)
                     }
-
-                    // Breakdown
-                    Column(
-                        Modifier.fillMaxWidth().background(Color(0xFFF8FAFC), RoundedCornerShape(6.dp)).padding(16.dp)
-                    ) {
-                        AmountBreakdown(
-                            subtotal = bill.subtotal, discount = bill.discount, extra = bill.extraCharges,
-                            grandTotal = bill.grandTotal, received = bill.paidAmount,
-                        )
+                    Column(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC), RoundedCornerShape(6.dp)).padding(16.dp)) {
+                        AmountBreakdown(bill.subtotal, bill.discount, bill.extraCharges, grandTotal = bill.grandTotal, received = bill.paidAmount)
                     }
                 }
-
                 HorizontalDivider(color = Color(0xFFF1F5F9))
-
-                // Action Buttons
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (pending) {
-                        Button(
-                            onClick = onReceive,
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DueColor),
-                            modifier = Modifier.weight(1.5f).height(40.dp),
-                        ) {
-                            Text("Receive Payment", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
-
-                    Spacer(Modifier.weight(0.5f))
-
-                    OutlinedButton(
-                        onClick = onEdit, shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        modifier = Modifier.height(40.dp),
-                    ) { Text("Edit", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-
-                    Button(
-                        onClick = onPrint, shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)),
-                        modifier = Modifier.height(40.dp),
-                    ) { Text("Print", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-
-                    Button(
-                        onClick = onWhatsApp, shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                        modifier = Modifier.height(40.dp),
-                    ) { Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-
-                    OutlinedButton(
-                        onClick = onDelete, shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, Color.Red),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(16.dp))
-                    }
+                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (pending) Button(onClick = onReceive, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = DueColor), modifier = Modifier.weight(1f).height(40.dp)) { Text("Receive", fontSize = 12.sp) }
+                    OutlinedButton(onClick = onEdit, shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f).height(40.dp)) { Text("Edit", fontSize = 12.sp) }
+                    Button(onClick = onPrint, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)), modifier = Modifier.weight(1f).height(40.dp)) { Text("Print", fontSize = 12.sp) }
+                    Button(onClick = onWhatsApp, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)), modifier = Modifier.weight(1f).height(40.dp)) { Text("WA", fontSize = 12.sp) }
+                    OutlinedButton(onClick = onDelete, shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color.Red), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red), modifier = Modifier.size(40.dp), contentPadding = PaddingValues(0.dp)) { Icon(Icons.Default.Delete, null, Modifier.size(16.dp)) }
                 }
             }
         }

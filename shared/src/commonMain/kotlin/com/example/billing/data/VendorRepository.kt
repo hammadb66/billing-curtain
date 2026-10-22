@@ -294,4 +294,21 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
             }
         }
     }
+
+
+    // Class ke andar:
+    suspend fun listSalesmen(): List<Salesman> = withContext(Dispatchers.Default) {
+        q.selectAllSalesmen { id, name -> Salesman(id, name) }.executeAsList()
+    }
+
+    suspend fun addSalesman(name: String): Long = withContext(Dispatchers.Default) {
+        q.transactionWithResult {
+            q.insertSalesman(name.trim())
+            q.lastInsertedId().executeAsOne()
+        }
+    }
+
+    suspend fun deleteSalesman(id: Long) = withContext(Dispatchers.Default) {
+        q.deleteSalesman(id)
+    }
 }

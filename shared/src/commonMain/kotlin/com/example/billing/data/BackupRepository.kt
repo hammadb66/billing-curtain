@@ -16,7 +16,24 @@ class BackupRepository(
 
     suspend fun exportAll(): String = withContext(Dispatchers.Default) {
         val billsList = bills.getAllBills().map {
-            BillBackup(it.id, it.customer, it.phone, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount, it.invoiceLabel, it.showProduct, it.showCategory, it.showSubcategory)
+            BillBackup(
+                id = it.id,
+                customer = it.customer,
+                phone = it.phone,
+                address = it.address,
+                phone2 = it.phone2,
+                accountNo = it.accountNo,
+                date = it.date,
+                rooms = it.rooms,
+                discount = it.discount,
+                extraCharges = it.extraCharges,
+                paidAmount = it.paidAmount,
+                invoiceLabel = it.invoiceLabel,
+                showProduct = it.showProduct,
+                showCategory = it.showCategory,
+                showSubcategory = it.showSubcategory,
+                salesmanId = it.salesmanId,
+            )
         }
 
         val vendorsList = vendors.listVendors().map { it.vendor }
@@ -53,16 +70,12 @@ class BackupRepository(
 
             // 1. Delete existing data (Clean Slate)
             bills.deleteAll()
-
             val existingVendors = vendors.listVendors()
             existingVendors.forEach { vendors.deleteVendor(it.vendor.id) }
-
             val existingProducts = vendors.listProducts()
             existingProducts.forEach { vendors.deleteProduct(it.id) }
-
             val existingSubs = vendors.listSubcategories()
             existingSubs.forEach { vendors.deleteSubcategory(it.id) }
-
             val existingCats = vendors.listCategories()
             existingCats.forEach { vendors.deleteCategory(it.id) }
 
