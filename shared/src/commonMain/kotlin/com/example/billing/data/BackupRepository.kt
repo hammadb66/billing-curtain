@@ -17,21 +17,10 @@ class BackupRepository(
     suspend fun exportAll(): String = withContext(Dispatchers.Default) {
         val billsList = bills.getAllBills().map {
             BillBackup(
-                id = it.id,
-                customer = it.customer,
-                phone = it.phone,
-                address = it.address,
-                phone2 = it.phone2,
-                accountNo = it.accountNo,
-                date = it.date,
-                rooms = it.rooms,
-                discount = it.discount,
-                extraCharges = it.extraCharges,
-                paidAmount = it.paidAmount,
-                invoiceLabel = it.invoiceLabel,
-                showProduct = it.showProduct,
-                showCategory = it.showCategory,
-                showSubcategory = it.showSubcategory,
+                id = it.id, customer = it.customer, phone = it.phone, address = it.address, phone2 = it.phone2,
+                accountNo = it.accountNo, date = it.date, rooms = it.rooms, discount = it.discount,
+                extraCharges = it.extraCharges, paidAmount = it.paidAmount, invoiceLabel = it.invoiceLabel,
+                showProduct = it.showProduct, showCategory = it.showCategory, showSubcategory = it.showSubcategory,
                 salesmanId = it.salesmanId,
             )
         }
@@ -52,6 +41,11 @@ class BackupRepository(
             PurchaseBackup(it.id, it.vendorId, it.date, it.items, it.total, it.discount, it.paid, it.notes)
         }
 
+        // NAYA: Customers export karein
+        val allCustomers = vendors.listCustomerAccounts().map {
+            CustomerAccountBackup(it.id, it.name, it.phone1, it.phone2, it.address, it.accountNo)
+        }
+
         val backup = FullBackup(
             bills = billsList,
             vendors = vendorsList.map { VendorBackup(it.id, it.name, it.address, it.phone1, it.phone2, it.accountDescription, it.createdAt) },
@@ -59,7 +53,8 @@ class BackupRepository(
             categories = allCategories,
             subcategories = allSubcategories,
             products = allProducts,
-            purchases = allPurchases
+            purchases = allPurchases,
+            customerAccounts = allCustomers // <-- Yahan add kiya
         )
         json.encodeToString(FullBackup.serializer(), backup)
     }
@@ -78,6 +73,9 @@ class BackupRepository(
             existingSubs.forEach { vendors.deleteSubcategory(it.id) }
             val existingCats = vendors.listCategories()
             existingCats.forEach { vendors.deleteCategory(it.id) }
+            // NAYA: Purane customers delete karein
+            val existingCustomers = vendors.listCustomerAccounts()
+            existingCustomers.forEach { vendors.deleteCustomerAccount(it.id) }
 
             // 2. Import Categories
             val catMap = mutableMapOf<Long, Long>()
@@ -133,8 +131,19 @@ class BackupRepository(
                 vendors.savePurchase(newPurchase)
             }
 
-            // 8. Import Bills
-            val billsJson = json.encodeToString(ListSerializer(BillBackup.serializer()), backup.bills)
+            // NAYA: 8. Import Customers aur Map Banayein
+            val custMap = mutableMapOf<Long, Long>()
+            for (c in backup.customerAccounts) {
+                val newId = vendors.addCustomerAccount(c.name, c.phone1, c.phone2, c.address, c.accountNo)
+                custMap[c.id] = newId
+            }
+
+            // 9. Import Bills (Aur Customers ki nayi ID link karein)
+            val updatedBills = backup.bills.map { b ->
+                val newSalesmanId = b.salesmanId?.let { custMap[it] }
+                b.copy(salesmanId = newSalesmanId)
+            }
+            val billsJson = json.encodeToString(ListSerializer(BillBackup.serializer()), updatedBills)
             bills.importFromJson(billsJson)
 
             null // Success

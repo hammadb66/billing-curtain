@@ -12,7 +12,8 @@ data class FullBackup(
     val categories: List<CategoryBackup> = emptyList(),
     val subcategories: List<SubcategoryBackup> = emptyList(),
     val products: List<ProductBackup> = emptyList(),
-    val purchases: List<PurchaseBackup> = emptyList()
+    val purchases: List<PurchaseBackup> = emptyList(),
+    val customerAccounts: List<CustomerAccountBackup> = emptyList() // <-- NAYA
 )
 
 @Serializable
@@ -41,4 +42,9 @@ data class ProductBackup(
 data class PurchaseBackup(
     val id: Long, val vendorId: Long, val date: String, val items: List<PurchaseItem>,
     val total: Double, val discount: Double, val paid: Double, val notes: String
+)
+
+@Serializable
+data class CustomerAccountBackup( // <-- NAYA
+    val id: Long, val name: String, val phone1: String, val phone2: String, val address: String, val accountNo: String
 )

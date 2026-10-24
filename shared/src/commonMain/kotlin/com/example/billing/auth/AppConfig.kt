@@ -8,7 +8,10 @@ object AppConfig {
     /** Firebase Console > Project settings (gear) > General > "Web API Key" */
     const val API_KEY = "AIzaSyCsEao-4FGFiGLMpuWAnFwN7GcHmyHUvoA"
 
-    /** Aap (developer) ka wo email jo Firebase Authentication me banaya hai */
+    /**
+     * Ye aapka Main (Super Admin) email hai.
+     * Ye hamesha chalega, chahe Firebase me kuch bhi ho.
+     */
     const val DEV_EMAIL = "hammadb193@gmail.com"
 
     /** Internet na ho to purana "license ON" kitne din tak chalne dena hai */

@@ -491,7 +491,7 @@ private fun RightCheckoutPanel(
             Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(value = form.customer, onValueChange = { form.customer = it }, label = { Text("Name", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = form.phone, onValueChange = { form.phone = sanitizePhone(it) }, label = { Text("Phone 1", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(12.dp))
+            OutlinedTextField(value = form.phone, onValueChange = { form.phone = sanitizePhone(it) }, label = { Text("Phone Number", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(12.dp))
 
             if (previousBalance > 0.0) { Spacer(Modifier.height(8.dp)); Text("Old Pending: Rs ${formatMoney(previousBalance)}", color = Color(0xFFE65100), fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }

@@ -159,7 +159,12 @@ private fun ProductsTabSplit(
                                     isSaving = false
                                     if (err != null) { showSnack(err) }
                                     else {
-                                        if (!lock) { selectedProduct = null; isNew = false; clearForm() } else { selectedProduct = null; isNew = true; clearForm() }
+                                        if (!lock) {
+                                            selectedProduct = null; isNew = false; clearForm()
+                                        } else {
+                                            // NAYA FIX: Agar lock on hai, to sirf ID reset karo, form clear mat karo
+                                            selectedProduct = null; isNew = true; nameFocus.requestFocus()
+                                        }
                                         onReload()
                                         showSnack("Product saved successfully!")
                                     }
@@ -199,7 +204,12 @@ private fun ProductsTabSplit(
                                 isSaving = false
                                 if (err != null) { showSnack(err) }
                                 else {
-                                    if (!lock) { selectedProduct = null; isNew = false; clearForm() } else { selectedProduct = null; isNew = true; clearForm() }
+                                    if (!lock) {
+                                        selectedProduct = null; isNew = false; clearForm()
+                                    } else {
+                                        // NAYA FIX: Agar lock on hai, to form clear mat karo
+                                        selectedProduct = null; isNew = true; nameFocus.requestFocus()
+                                    }
                                     onReload(); showSnack("Product saved!")
                                 }
                             }

@@ -2,6 +2,7 @@ package com.example.billing.auth
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -71,19 +72,20 @@ class FirebaseApi {
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        // Agar exception message mein "firebase" ya URL jaisa kuch hai, to user-friendly message dein
         val msg = e.message ?: ""
         val friendlyMsg = when {
-            msg.contains("firebase", ignoreCase = true) || msg.contains("http", ignoreCase = true) ->
-                "No internet connection. Please check your connection and try again."
-            msg.contains("timeout", ignoreCase = true) ->
-                "Connection timed out. Please try again."
+            msg.contains("firebase", ignoreCase = true) || msg.contains(
+                "http",
+                ignoreCase = true
+            ) -> "No internet connection. Please check your connection and try again."
+
+            msg.contains("timeout", ignoreCase = true) -> "Connection timed out. Please try again."
+
             else -> msg
         }
         LicenseFetch.Failed(friendlyMsg)
     }
 
-    /** Is shop ke registered laptops */
     suspend fun fetchDevices(shopId: String): DevicesResult = try {
         val res = httpCall("GET", "$db/devices/$shopId.json")
         if (res.code != 200) {
@@ -97,7 +99,6 @@ class FirebaseApi {
         DevicesResult.Failed(e.message ?: "network error")
     }
 
-    /** Naya laptop darj karna. null = kamyab, warna error ka text */
     suspend fun registerDevice(
         shopId: String,
         deviceId: String,
@@ -119,7 +120,6 @@ class FirebaseApi {
         e.message ?: "network error"
     }
 
-    /** "Aakhri baar kab chala" update karna (nakami ignore) */
     suspend fun touchDevice(shopId: String, deviceId: String, now: Long) {
         try {
             httpCall("PUT", "$db/devices/$shopId/$deviceId/lastSeen.json", now.toString())
@@ -148,7 +148,8 @@ class FirebaseApi {
             val token = obj["idToken"]?.jsonPrimitive?.contentOrNull ?: ""
             val mail = obj["email"]?.jsonPrimitive?.contentOrNull ?: ""
             if (token.isEmpty()) DevResult.Failed("Login failed.")
-            else if (!mail.equals(AppConfig.DEV_EMAIL, ignoreCase = true)) DevResult.Failed("This is not a developer account.")
+            // NAYA FIX: Firebase se check karein ke ye developer allowed hai ya nahi
+            else if (!isDeveloperAllowed(mail)) DevResult.Failed("This is not a developer account (or account is removed).")
             else DevResult.Success(DevSession(mail, token))
         } else {
             val code = runCatching {
@@ -157,8 +158,8 @@ class FirebaseApi {
             DevResult.Failed(
                 when {
                     code.contains("TOO_MANY") -> "Extensive efforts. Try again after a while."
-                    code.contains("INVALID") || code.contains("EMAIL_NOT_FOUND") || code.contains("PASSWORD") ->
-                        "The email or password is incorrect."
+                    code.contains("INVALID") || code.contains("EMAIL_NOT_FOUND") || code.contains("PASSWORD") -> "The email or password is incorrect."
+
                     else -> "Login failed (HTTP ${res.code} $code)"
                 }
             )
@@ -167,6 +168,42 @@ class FirebaseApi {
         throw e
     } catch (e: Exception) {
         DevResult.Failed("Check your internet connection (internet is required for developer login).")
+    }
+
+    // NAYA FUNCTION: Firebase se developers ki list check karega
+    // NAYA FUNCTION: Firebase se developers ki list check karega (Ab har tarah ke format ko parh lega)
+    // NAYA FUNCTION: Firebase se developers ki list check karega (Har format aur case-insensitive)
+    private suspend fun isDeveloperAllowed(email: String): Boolean {
+        // 1. Main dev (AppConfig se) hamesha allowed hai (backup ke liye)
+        if (email.equals(AppConfig.DEV_EMAIL, ignoreCase = true)) return true
+
+        // 2. Firebase Database se check karein
+        return try {
+            val res = httpCall("GET", "$db/devs.json")
+            if (res.code == 200) {
+                val element = json.parseToJsonElement(res.body)
+
+                // Email ko lowercase aur dot ko comma mein badal lein
+                val formattedEmail = email.lowercase().replace('.', ',')
+
+                when (element) {
+                    // Agar Firebase me array/list ki tarah save hai (Purana tarika)
+                    is JsonArray -> {
+                        element.any { it.jsonPrimitive.contentOrNull?.lowercase() == email.lowercase() }
+                    }
+                    // Agar Firebase me object (keys) ki tarah save hai (Naya tarika)
+                    is JsonObject -> {
+                        // Check karein ke kya formattedEmail (comma wala) database mein majood hai?
+                        // Ya kya kisi value ke andar email majood hai?
+                        element.keys.any { it.lowercase() == formattedEmail } ||
+                                element.values.any { it.jsonPrimitive.contentOrNull?.lowercase() == email.lowercase() }
+                    }
+                    else -> false
+                }
+            } else false
+        } catch (e: Exception) {
+            false
+        }
     }
 
     // =============== Sirf developer (token ke saath) ===============
@@ -178,9 +215,8 @@ class FirebaseApi {
         } else {
             val element = json.parseToJsonElement(res.body)
             if (element is JsonObject) {
-                val map = element.entries
-                    .filter { it.value is JsonObject }
-                    .associate { it.key to it.value.toLicenseInfo() }
+                val map =
+                    element.entries.filter { it.value is JsonObject }.associate { it.key to it.value.toLicenseInfo() }
                 ShopsResult.Ok(map)
             } else {
                 ShopsResult.Ok(emptyMap())
@@ -192,7 +228,6 @@ class FirebaseApi {
         ShopsResult.Failed("Check the internet.")
     }
 
-    /** shopId -> (deviceId -> record). null = masla */
     suspend fun listAllDevices(idToken: String): Map<String, Map<String, DeviceRecord>>? = try {
         val res = httpCall("GET", "$db/devices.json?auth=$idToken")
         if (res.code != 200) {
@@ -211,7 +246,6 @@ class FirebaseApi {
         null
     }
 
-    /** null = kamyab, warna error ka text */
     suspend fun putLicense(idToken: String, shopId: String, info: LicenseInfo): String? = try {
         val body = buildJsonObject {
             put("active", info.active)
@@ -227,14 +261,10 @@ class FirebaseApi {
         "Check the internet."
     }
 
-    /**
-     * Shop ka license, laptops aur laptops ke logins mita deta hai (shop band ho jata hai).
-     * deleteBills = false (default): shop ke bills Firebase me MAHFOOZ rehte hain (sirf developer dekh sakta hai),
-     * taake baad me customer data mange to mil jaye. true = bills bhi hamesha ke liye mit jate hain.
-     * null = kamyab
-     */
     suspend fun deleteShop(idToken: String, shopId: String, deleteBills: Boolean = false): String? = try {
-        val nodes = if (deleteBills) listOf("licenses", "devices", "members", "bills") else listOf("licenses", "devices", "members")
+        val nodes = if (deleteBills) listOf("licenses", "devices", "members", "bills") else listOf(
+            "licenses", "devices", "members"
+        )
         val codes = nodes.map { node ->
             httpCall("DELETE", "$db/$node/$shopId.json?auth=$idToken", timeoutMs = 30_000).code
         }
@@ -267,9 +297,7 @@ class FirebaseApi {
 
     private fun parseDevices(element: JsonElement): Map<String, DeviceRecord> {
         if (element !is JsonObject) return emptyMap()
-        return element.entries
-            .filter { it.value is JsonObject }
-            .associate { (id, value) -> id to value.toDevice(id) }
+        return element.entries.filter { it.value is JsonObject }.associate { (id, value) -> id to value.toDevice(id) }
     }
 
     private fun JsonElement.toDevice(id: String): DeviceRecord {
