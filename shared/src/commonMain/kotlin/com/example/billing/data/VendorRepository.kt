@@ -18,7 +18,6 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         q.selectAllVendors { id, name, address, p1, p2, desc, created ->
             Vendor(id, name, address, p1, p2, desc, created)
         }.executeAsList().map { v ->
-            // executeAsOne() directly Double return karega
             val bal = q.selectVendorBalance(v.id, v.id).executeAsOne()
             VendorWithBalance(v, bal)
         }
@@ -34,7 +33,7 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         withContext(Dispatchers.Default) {
             q.transactionWithResult {
                 q.insertVendor(name.trim(), address.trim(), phone1.trim(), phone2.trim(), desc.trim(), nowIso())
-                q.lastInsertedId().executeAsOne() // Ab ye VendorQueries mein resolve hoga
+                q.lastInsertedId().executeAsOne()
             }
         }
 
@@ -44,18 +43,8 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
 
     suspend fun deleteVendor(id: Long) = withContext(Dispatchers.Default) {
         q.transaction {
-            // cascade delete: payments + purchases
-            // 1. Payments delete karein (6 parameters: id, vendorId, amount, discount, date, note)
-            q.selectPaymentsForVendor(id) { pid, vid, amt, disc, date, note -> pid }
-                .executeAsList()
-                .forEach { q.deleteVendorPayment(it) }
-
-            // 2. Purchases delete karein (8 parameters: id, vendorId, date, data, total, discount, paid, notes)
-            q.selectPurchasesForVendor(id) { pid, vid, date, data, total, disc, paid, notes -> pid }
-                .executeAsList()
-                .forEach { q.deletePurchase(it) }
-
-            // 3. Vendor delete karein
+            q.selectPaymentsForVendor(id) { pid, vid, amt, disc, date, note -> pid }.executeAsList().forEach { q.deleteVendorPayment(it) }
+            q.selectPurchasesForVendor(id) { pid, vid, date, data, total, disc, paid, notes -> pid }.executeAsList().forEach { q.deletePurchase(it) }
             q.deleteVendor(id)
         }
     }
@@ -68,9 +57,7 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
     }
 
     suspend fun addPayment(vendorId: Long, amount: Double, discount: Double, date: String, note: String) =
-        withContext(Dispatchers.Default) {
-            q.insertVendorPayment(vendorId, amount, discount, date, note)
-        }
+        withContext(Dispatchers.Default) { q.insertVendorPayment(vendorId, amount, discount, date, note) }
 
     suspend fun updatePayment(p: VendorPayment) = withContext(Dispatchers.Default) {
         q.updateVendorPayment(p.amount, p.discount, p.date, p.note, p.id)
@@ -99,7 +86,6 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         q.updateCategory(clean, id)
         null
     }
-
     suspend fun deleteCategory(id: Long) = withContext(Dispatchers.Default) { q.deleteCategory(id) }
 
     // ==================== SUBCATEGORIES ====================
@@ -124,7 +110,6 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         q.updateSubcategory(clean, id)
         null
     }
-
     suspend fun deleteSubcategory(id: Long) = withContext(Dispatchers.Default) { q.deleteSubcategory(id) }
 
     // ==================== PRODUCTS ====================
@@ -134,10 +119,8 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         q.selectAllProducts { id, name, cid, sid, price, sp, stock, unit ->
             Product(
                 id = id, name = name,
-                categoryId = cid,
-                categoryName = cats[cid]?.name ?: "",
-                subcategoryId = sid,
-                subcategoryName = subs[sid]?.name ?: "",
+                categoryId = cid, categoryName = cats[cid]?.name ?: "",
+                subcategoryId = sid, subcategoryName = subs[sid]?.name ?: "",
                 price = price, salePrice = sp, openingStock = stock, unit = unit,
             )
         }.executeAsList()
@@ -145,12 +128,9 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
 
     suspend fun getProduct(id: Long): Product? = listProducts().firstOrNull { it.id == id }
 
-
     suspend fun addProduct(p: Product): String? = withContext(Dispatchers.Default) {
         val existing = listProducts().any {
-            it.name.equals(p.name.trim(), true) &&
-                    it.categoryId == p.categoryId &&
-                    it.subcategoryId == p.subcategoryId
+            it.name.equals(p.name.trim(), true) && it.categoryId == p.categoryId && it.subcategoryId == p.subcategoryId
         }
         if (existing) return@withContext "Product '${p.name}' already exists in this Category/Subcategory."
 
@@ -158,20 +138,17 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
             q.insertProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim())
             q.lastInsertedId().executeAsOne()
         }
-        null // Success
+        null
     }
 
     suspend fun updateProduct(p: Product): String? = withContext(Dispatchers.Default) {
         val existing = listProducts().any {
-            it.name.equals(p.name.trim(), true) &&
-                    it.categoryId == p.categoryId &&
-                    it.subcategoryId == p.subcategoryId &&
-                    it.id != p.id
+            it.name.equals(p.name.trim(), true) && it.categoryId == p.categoryId && it.subcategoryId == p.subcategoryId && it.id != p.id
         }
         if (existing) return@withContext "Another product '${p.name}' already exists in this Category/Subcategory."
 
         q.updateProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim(), p.id)
-        null // Success
+        null
     }
     suspend fun deleteProduct(id: Long) = withContext(Dispatchers.Default) { q.deleteProduct(id) }
 
@@ -181,8 +158,7 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         val mapper: (Long, Long, String, String, Double, Double, Double, String) -> Purchase =
             { id, vid, date, data, total, discount, paid, notes ->
                 Purchase(
-                    id = id, vendorId = vid, vendorName = vendors[vid] ?: "",
-                    date = date,
+                    id = id, vendorId = vid, vendorName = vendors[vid] ?: "", date = date,
                     items = runCatching { json.decodeFromString(itemsSerializer, data) }.getOrDefault(emptyList()),
                     total = total, discount = discount, paid = paid, notes = notes,
                 )
@@ -212,103 +188,52 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
     suspend fun getProductStock(productId: Long): Double = withContext(Dispatchers.Default) {
         val product = getProduct(productId) ?: return@withContext 0.0
         var stock = product.openingStock
-
-        // 1. Add Purchased Stock (JSON parse karke)
-        val purchases = listPurchases()
-        purchases.forEach { purchase ->
-            purchase.items.forEach { item ->
-                if (item.productId == productId) stock += item.qtyValue
-            }
-        }
-
-        // 2. Minus Billed/Sold Stock
-        // (Note: BillRepository se bills fetch karenge)
-        // Hum VendorRepository me BillRepository ka reference nahi de sakte seedha,
-        // isliye hum billing screen pe hi stock calculate karenge ya ek common service banayenge.
-
-        // Filhal ke liye hum billing screen mein calculate karenge jab item add hoga.
-        return@withContext stock // Just for opening stock display
+        listPurchases().forEach { purchase -> purchase.items.forEach { item -> if (item.productId == productId) stock += item.qtyValue } }
+        return@withContext stock
     }
 
-    // YEH NAYA FUNCTION ADD KAREIN (class ke andar)
     suspend fun getLiveStock(productId: Long): Double = withContext(Dispatchers.Default) {
         val product = getProduct(productId) ?: return@withContext 0.0
         var stock = product.openingStock
-
-        // 1. Purchases se stock ADD karein
-        listPurchases().forEach { purchase ->
-            purchase.items.forEach { item ->
-                if (item.productId == productId) stock += item.qtyValue
-            }
-        }
-
-        // 2. Bills (Sales) se stock MINUS karein
-        val allBills = bills.getAllBills()
-        allBills.forEach { bill ->
-            bill.rooms.forEach { room ->
-                room.items.forEach { item ->
-                    if (item.productId == productId) stock -= item.qtyValue
-                }
-            }
-        }
+        listPurchases().forEach { purchase -> purchase.items.forEach { item -> if (item.productId == productId) stock += item.qtyValue } }
+        bills.getAllBills().forEach { bill -> bill.rooms.forEach { room -> room.items.forEach { item -> if (item.productId == productId) stock -= item.qtyValue } } }
         stock
     }
 
-    /** Ek hi pass me sab products ka live stock calculate karta hai — tez hai. */
     suspend fun listProductsWithStock(): List<Product> = withContext(Dispatchers.Default) {
         val prods = listProducts()
         val purchases = listPurchases()
         val allBills = bills.getAllBills()
-
         val stockMap = mutableMapOf<Long, Double>()
         prods.forEach { stockMap[it.id] = it.openingStock }
-
-        // + Purchases
-        purchases.forEach { pu ->
-            pu.items.forEach { item ->
-                item.productId?.let { pid ->
-                    stockMap[pid] = (stockMap[pid] ?: 0.0) + item.qtyValue
-                }
-            }
-        }
-        // − Bills
-        allBills.forEach { b ->
-            b.rooms.forEach { r ->
-                r.items.forEach { item ->
-                    item.productId?.let { pid ->
-                        stockMap[pid] = (stockMap[pid] ?: 0.0) - item.qtyValue
-                    }
-                }
-            }
-        }
-
+        purchases.forEach { pu -> pu.items.forEach { item -> item.productId?.let { pid -> stockMap[pid] = (stockMap[pid] ?: 0.0) + item.qtyValue } } }
+        allBills.forEach { b -> b.rooms.forEach { r -> r.items.forEach { item -> item.productId?.let { pid -> stockMap[pid] = (stockMap[pid] ?: 0.0) - item.qtyValue } } } }
         prods.map { it.copy(liveStock = stockMap[it.id] ?: it.openingStock) }
     }
 
-    /** Product kisi bill me use hua hai? (delete protection ke liye) */
     suspend fun isProductUsedInAnyBill(productId: Long): Boolean = withContext(Dispatchers.Default) {
-        val allBills = bills.getAllBills()
-        allBills.any { bill ->
-            bill.rooms.any { room ->
-                room.items.any { it.productId == productId }
-            }
-        }
+        bills.getAllBills().any { bill -> bill.rooms.any { room -> room.items.any { it.productId == productId } } }
     }
 
-
-    // Class ke andar:
-    suspend fun listSalesmen(): List<Salesman> = withContext(Dispatchers.Default) {
-        q.selectAllSalesmen { id, name -> Salesman(id, name) }.executeAsList()
+    // ==================== CUSTOMER ACCOUNTS ====================
+    suspend fun listCustomerAccounts(): List<CustomerAccount> = withContext(Dispatchers.Default) {
+        q.selectAllSalesmen { id, name, p1, p2, addr, acc -> CustomerAccount(id, name, p1, p2, addr, acc) }.executeAsList()
     }
 
-    suspend fun addSalesman(name: String): Long = withContext(Dispatchers.Default) {
+    suspend fun addCustomerAccount(name: String, phone1: String, phone2: String, address: String, accountNo: String): Long = withContext(Dispatchers.Default) {
         q.transactionWithResult {
-            q.insertSalesman(name.trim())
+            q.insertSalesman(name.trim(), phone1.trim(), phone2.trim(), address.trim(), accountNo.trim())
             q.lastInsertedId().executeAsOne()
         }
     }
 
-    suspend fun deleteSalesman(id: Long) = withContext(Dispatchers.Default) {
-        q.deleteSalesman(id)
+    suspend fun updateCustomerAccount(account: CustomerAccount) = withContext(Dispatchers.Default) {
+        q.updateSalesman(account.name.trim(), account.phone1.trim(), account.phone2.trim(), account.address.trim(), account.accountNo.trim(), account.id)
+    }
+
+    suspend fun deleteCustomerAccount(id: Long) = withContext(Dispatchers.Default) { q.deleteSalesman(id) }
+
+    suspend fun isCustomerAccountUsedInBills(id: Long): Boolean = withContext(Dispatchers.Default) {
+        bills.getAllBills().any { it.salesmanId == id }
     }
 }

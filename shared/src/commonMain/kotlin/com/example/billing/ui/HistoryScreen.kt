@@ -214,14 +214,19 @@ fun HistoryScreen(
 
                             // Search Bar
                             if (searching) {
-                                OutlinedTextField(
-                                    value = query,
-                                    onValueChange = { query = it },
-                                    placeholder = { Text("Search customer/invoice...", fontSize = 13.sp) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.width(250.dp).height(44.dp).focusRequester(focusRequester),
+                                CompactSearchField(
+                                    value = query, onValueChange = { query = it },
+                                    placeholder = "Search Name...",
+                                    modifier = Modifier.width(350.dp)
                                 )
+//                                OutlinedTextField(
+//                                    value = query,
+//                                    onValueChange = { query = it },
+//                                    placeholder = { Text("Search customer/invoice...", fontSize = 13.sp) },
+//                                    singleLine = true,
+//                                    shape = RoundedCornerShape(6.dp),
+//                                    modifier = Modifier.width(250.dp).height(44.dp).focusRequester(focusRequester),
+//                                )
                                 Spacer(Modifier.width(8.dp))
                                 IconButton(onClick = { searching = false; query = "" }) {
                                     Icon(Icons.Default.Close, "Close search")

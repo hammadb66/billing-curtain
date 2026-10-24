@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -31,10 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.billing.AppServices
-import com.example.billing.model.BillingFormState
-import com.example.billing.model.Product
-import com.example.billing.model.RoomState
-import com.example.billing.model.Salesman
+import com.example.billing.model.*
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.pdf.buildInvoiceRows
 import com.example.billing.presentation.BillingViewModel
@@ -58,20 +56,27 @@ fun BillingScreen(
     var isPrinting by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    var salesmen by remember { mutableStateOf<List<Salesman>>(emptyList()) }
-    var selectedSalesman by remember { mutableStateOf<Salesman?>(null) }
-    var showAddSalesman by remember { mutableStateOf(false) }
+    var showManageCustomers by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showImportConfirm by remember { mutableStateOf(false) }
     var pendingImportText by remember { mutableStateOf<String?>(null) }
 
+    var accounts by remember { mutableStateOf<List<CustomerAccount>>(emptyList()) }
+    var editingAccount by remember { mutableStateOf<CustomerAccount?>(null) }
+    var deleteAccount by remember { mutableStateOf<CustomerAccount?>(null) }
+
     val viewModel: BillingViewModel = koinViewModel()
     val services = koinInject<AppServices>()
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
-    LaunchedEffect(Unit) { products = services.vendors.listProductsWithStock() }
+
+    LaunchedEffect(Unit) {
+        products = services.vendors.listProductsWithStock()
+        accounts = services.vendors.listCustomerAccounts()
+        viewModel.form.shouldPrint = services.settings.get("should_print")?.toBoolean() ?: true
+    }
+
     val form = viewModel.form
     val previousBalance by viewModel.previousBalance.collectAsState()
-    LaunchedEffect(Unit) { salesmen = services.vendors.listSalesmen() }
     LaunchedEffect(form.phone) { viewModel.loadCustomerInfo(form.phone) }
 
     PlatformBackHandler { showExitConfirm = true }
@@ -96,20 +101,24 @@ fun BillingScreen(
         val savedShowProduct = form.showProduct; val savedShowCategory = form.showCategory; val savedShowSubcategory = form.showSubcategory
         isPrinting = true
         viewModel.saveBill(
-            userName = userName, salesmanId = selectedSalesman?.id,
+            userName = userName,
             showProduct = savedShowProduct, showCategory = savedShowCategory, showSubcategory = savedShowSubcategory,
             onSuccess = { invoiceNo, customer, phone, iso, rooms, discVal, extraVal, paid ->
                 form.reset()
                 scope.launch {
-                    var snackText: String? = null
-                    try {
-                        val printed = printer.print(
-                            title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
-                            rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid, showProduct = savedShowProduct, showCategory = savedShowCategory, showSubcategory = savedShowSubcategory)
-                        )
-                        snackText = if (printed) "Bill printed & saved!" else "Bill saved. Print cancelled."
-                    } catch (e: Throwable) { snackText = "Bill saved, but print failed." }
-                    products = services.vendors.listProductsWithStock(); isPrinting = false; snackText?.let { snackbar.showSnackbar(it) }
+                    if (form.shouldPrint) {
+                        var snackText: String? = null
+                        try {
+                            val printed = printer.print(
+                                title = "Invoice_${customer.filter { it.isLetterOrDigit() || it == ' ' }}",
+                                rows = buildInvoiceRows(customer, phone, displayDate(iso), rooms, discVal, extraVal, invoiceNo = invoiceNo, paidAmount = paid, showProduct = savedShowProduct, showCategory = savedShowCategory, showSubcategory = savedShowSubcategory)
+                            )
+                            snackText = if (printed) "Bill printed & saved!" else "Bill saved. Print cancelled."
+                        } catch (e: Throwable) { snackText = "Bill saved, but print failed." }
+                        products = services.vendors.listProductsWithStock(); isPrinting = false; snackText?.let { snackbar.showSnackbar(it) }
+                    } else {
+                        products = services.vendors.listProductsWithStock(); isPrinting = false; snackbar.showSnackbar("Bill saved successfully (No Print).")
+                    }
                 }
             },
             onError = { error -> isPrinting = false; message = "Save Error" to error }
@@ -138,14 +147,38 @@ fun BillingScreen(
                         }
                     }
                     VerticalDivider(color = Color(0xFFE0E0E0))
-                    RightCheckoutPanel(form, viewModel, previousBalance, salesmen, selectedSalesman, { selectedSalesman = it }, { showAddSalesman = true }, isPrinting, { printAndSave() }, { confirmReset = true })
+                    RightCheckoutPanel(
+                        form = form, viewModel = viewModel, previousBalance = previousBalance,
+                        onManageCustomers = { showManageCustomers = true },
+                        accounts = accounts,
+                        onEditAccount = { editingAccount = it },
+                        onDeleteAccount = { deleteAccount = it },
+                        isPrinting = isPrinting, onPrint = { printAndSave() }, onReset = { confirmReset = true }
+                    )
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        item { MobileHeaderBlock(form, onOpenHistory, onOpenItemReport, onOpenManageItems, onOpenVendors, onOpenPurchases, { showBackupDialog = true }, onLogout, userName, isDeveloper, !isPrinting, salesmen, selectedSalesman, { selectedSalesman = it }, { showAddSalesman = true }, previousBalance) }
+                        item {
+                            MobileHeaderBlock(
+                                form = form, onOpenHistory = onOpenHistory, onOpenItemReport = onOpenItemReport, onOpenManageItems = onOpenManageItems, onOpenVendors = onOpenVendors, onOpenPurchases = onOpenPurchases,
+                                onOpenBackupRestore = { showBackupDialog = true }, onLogout = onLogout, userName = userName, isDeveloper = isDeveloper, enabled = !isPrinting,
+                                onManageCustomers = { showManageCustomers = true },
+                                previousBalance = previousBalance,
+                                accounts = accounts,
+                                onEditAccount = { editingAccount = it },
+                                onDeleteAccount = { deleteAccount = it }
+                            )
+                        }
                         item { FinancialAdjustmentsBlock(form, enabled = !isPrinting) }
                         item { DisplayOptionsBlock(form, onOptionChange = { viewModel.setDisplayOption(it) }) }
+                        item {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                Button(onClick = { form.addRoom() }, enabled = !isPrinting, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50)), shape = RoundedCornerShape(6.dp)) {
+                                    Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Add Section", fontSize = 13.sp)
+                                }
+                            }
+                        }
                         roomItems(form, onAddItem = { addItemForRoom = it }, onDelete = { roomToDelete = it })
                     }
                     Surface(shadowElevation = 8.dp, color = Color.White) {
@@ -153,7 +186,7 @@ fun BillingScreen(
                             AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
                             if (form.balance > 0.005) BalanceBanner(form.receivedValue, form.balance)
                             Spacer(Modifier.height(12.dp))
-                            MobileActionBlock(form.grandTotal, summary, !isPrinting, { printAndSave() }, { confirmReset = true })
+                            MobileActionBlock(form.grandTotal, summary, !isPrinting, { printAndSave() }, { confirmReset = true }, form.shouldPrint)
                         }
                     }
                 }
@@ -176,6 +209,54 @@ fun BillingScreen(
     roomToDelete?.let { room -> ConfirmDialog("Delete Bill", "Are you sure you want to delete this bill?", "Confirm", { form.removeRoom(room); roomToDelete = null }, { roomToDelete = null }) }
     if (confirmReset) ConfirmDialog("Reset", "Do you want to clear all the fields?", "Reset", { form.reset(); confirmReset = false }, { confirmReset = false })
 
+    if (showManageCustomers) {
+        CustomerManageDialog(
+            services = services,
+            onClose = {
+                showManageCustomers = false
+                scope.launch { accounts = services.vendors.listCustomerAccounts() }
+            }
+        )
+    }
+
+    if (editingAccount != null) {
+        CustomerAccountDialog(
+            initial = editingAccount,
+            onSave = { acc ->
+                scope.launch {
+                    if (acc.id == 0L) services.vendors.addCustomerAccount(acc.name, acc.phone1, acc.phone2, acc.address, acc.accountNo)
+                    else services.vendors.updateCustomerAccount(acc)
+                    accounts = services.vendors.listCustomerAccounts()
+                    editingAccount = null
+                }
+            },
+            onDismiss = { editingAccount = null }
+        )
+    }
+
+    deleteAccount?.let { acc ->
+        AlertDialog(
+            onDismissRequest = { deleteAccount = null },
+            title = { Text("Delete Customer ID?") },
+            text = { Text("Are you sure you want to delete '${acc.name}'? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        if (services.vendors.isCustomerAccountUsedInBills(acc.id)) {
+                            snackbar.showSnackbar("Cannot delete! This ID is used in bills.")
+                        } else {
+                            services.vendors.deleteCustomerAccount(acc.id)
+                            accounts = services.vendors.listCustomerAccounts()
+                            snackbar.showSnackbar("Deleted!")
+                        }
+                    }
+                    deleteAccount = null
+                }) { Text("Delete", color = Color.Red) }
+            },
+            dismissButton = { TextButton(onClick = { deleteAccount = null }) { Text("Cancel") } }
+        )
+    }
+
     if (showBackupDialog) {
         AlertDialog(
             onDismissRequest = { showBackupDialog = false }, title = { Text("Full Backup / Restore") },
@@ -188,20 +269,165 @@ fun BillingScreen(
         AlertDialog(
             onDismissRequest = { showImportConfirm = false; pendingImportText = null }, title = { Text("⚠️ Warning! Data Replace", color = Color.Red, fontWeight = FontWeight.Bold) },
             text = { Text("This will DELETE all current data and replace it with the backup. Are you sure?", color = Color.DarkGray) },
-            confirmButton = { TextButton(onClick = { showImportConfirm = false; val text = pendingImportText; pendingImportText = null; if (text != null) { scope.launch { try { val err = services.backup.importAll(text); if (err == null) { snackbar.showSnackbar("Import successful! All data restored."); products = services.vendors.listProductsWithStock() } else snackbar.showSnackbar("Import failed: $err") } catch (e: Exception) { snackbar.showSnackbar("Import failed: ${e.message}") } } } }) { Text("Yes, Replace All", color = Color.Red, fontWeight = FontWeight.Bold) } },
+            confirmButton = { TextButton(onClick = { showImportConfirm = false; val text = pendingImportText; pendingImportText = null; if (text != null) { scope.launch { try { val err = services.backup.importAll(text); if (err == null) { snackbar.showSnackbar("Import successful! All data restored."); products = services.vendors.listProductsWithStock(); accounts = services.vendors.listCustomerAccounts() } else snackbar.showSnackbar("Import failed: $err") } catch (e: Exception) { snackbar.showSnackbar("Import failed: ${e.message}") } } } }) { Text("Yes, Replace All", color = Color.Red, fontWeight = FontWeight.Bold) } },
             dismissButton = { TextButton(onClick = { showImportConfirm = false; pendingImportText = null }) { Text("Cancel") } }
         )
     }
-    if (showAddSalesman) {
-        var newName by remember { mutableStateOf("") }
+}
+
+// ================= CUSTOMER ACCOUNT DIALOGS =================
+
+@Composable
+fun CustomerManageDialog(services: AppServices, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var accounts by remember { mutableStateOf<List<CustomerAccount>>(emptyList()) }
+    var showAddEdit by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<CustomerAccount?>(null) }
+    var deleteAccount by remember { mutableStateOf<CustomerAccount?>(null) }
+
+    suspend fun reload() { accounts = services.vendors.listCustomerAccounts() }
+    LaunchedEffect(Unit) { reload() }
+
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Manage Customer IDs", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.heightIn(max = 400.dp)) {
+                Button(onClick = { editingAccount = null; showAddEdit = true }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Text("+ Add New Customer ID") }
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(accounts) { acc ->
+                        Card(border = BorderStroke(1.dp, Color.LightGray)) {
+                            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(acc.name, Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                IconButton(onClick = { editingAccount = acc; showAddEdit = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Edit, "Edit", tint = Color.Blue) }
+                                IconButton(onClick = { deleteAccount = acc }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } }
+    )
+
+    if (showAddEdit) {
+        CustomerAccountDialog(
+            initial = editingAccount,
+            onSave = { acc ->
+                scope.launch {
+                    if (acc.id == 0L) services.vendors.addCustomerAccount(acc.name, acc.phone1, acc.phone2, acc.address, acc.accountNo)
+                    else services.vendors.updateCustomerAccount(acc)
+                    reload()
+                    showAddEdit = false
+                }
+            },
+            onDismiss = { showAddEdit = false }
+        )
+    }
+
+    deleteAccount?.let { acc ->
         AlertDialog(
-            onDismissRequest = { showAddSalesman = false }, title = { Text("Add Salesman / Account", fontWeight = FontWeight.Bold) },
-            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Salesman Name") }, singleLine = true, shape = RoundedCornerShape(6.dp)) },
-            confirmButton = { Button(onClick = { scope.launch { if (newName.isNotBlank()) { services.vendors.addSalesman(newName); salesmen = services.vendors.listSalesmen(); newName = ""; showAddSalesman = false } } }, shape = RoundedCornerShape(6.dp)) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { showAddSalesman = false }) { Text("Cancel") } }
+            onDismissRequest = { deleteAccount = null },
+            title = { Text("Delete Customer ID?") },
+            text = { Text("Are you sure you want to delete '${acc.name}'? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        if (services.vendors.isCustomerAccountUsedInBills(acc.id)) {
+                            snackbar.showSnackbar("Cannot delete! This ID is used in bills.")
+                        } else {
+                            services.vendors.deleteCustomerAccount(acc.id)
+                            reload()
+                            snackbar.showSnackbar("Deleted!")
+                        }
+                    }
+                    deleteAccount = null
+                }) { Text("Delete", color = Color.Red) }
+            },
+            dismissButton = { TextButton(onClick = { deleteAccount = null }) { Text("Cancel") } }
         )
     }
 }
+
+@Composable
+fun CustomerAccountDialog(initial: CustomerAccount?, onSave: (CustomerAccount) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var phone1 by remember { mutableStateOf(initial?.phone1 ?: "") }
+    var phone2 by remember { mutableStateOf(initial?.phone2 ?: "") }
+    var address by remember { mutableStateOf(initial?.address ?: "") }
+    var accountNo by remember { mutableStateOf(initial?.accountNo ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "New Customer ID" else "Edit Customer ID", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = phone1, onValueChange = { phone1 = sanitizePhone(it) }, label = { Text("Phone 1") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = phone2, onValueChange = { phone2 = sanitizePhone(it) }, label = { Text("Phone 2") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, singleLine = true, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = accountNo, onValueChange = { accountNo = it }, label = { Text("Account No") }, singleLine = true, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onSave(CustomerAccount(initial?.id ?: 0L, name.trim(), phone1.trim(), phone2.trim(), address.trim(), accountNo.trim())) }, enabled = name.isNotBlank(), shape = RoundedCornerShape(6.dp)) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        shape = RoundedCornerShape(8.dp), containerColor = Color.White
+    )
+}
+
+@Composable
+fun CustomerSelector(
+    accounts: List<CustomerAccount>,
+    selected: CustomerAccount?,
+    onSelect: (CustomerAccount?) -> Unit,
+    onManageCustomers: () -> Unit,
+    onEdit: (CustomerAccount) -> Unit,
+    onDelete: (CustomerAccount) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Text(selected?.name ?: "Counter Sale (Manual)", maxLines = 1)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Counter Sale (Manual)", fontWeight = FontWeight.Bold, color = AppGreen) },
+                onClick = { onSelect(null); expanded = false }
+            )
+            HorizontalDivider()
+            accounts.forEach { acc ->
+                DropdownMenuItem(
+                    text = {
+                        Row(Modifier.fillMaxWidth().width(220.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(acc.name, Modifier.weight(1f), maxLines = 1)
+                            IconButton(onClick = { onEdit(acc) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp), tint = Color.Blue)
+                            }
+                            IconButton(onClick = { onDelete(acc) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(16.dp), tint = Color.Red)
+                            }
+                        }
+                    },
+                    onClick = { onSelect(acc); expanded = false }
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Manage Customers...", color = Color.Gray) },
+                onClick = { onManageCustomers(); expanded = false }
+            )
+        }
+    }
+}
+// ===============================================================
 
 @Composable
 private fun DesktopSidebar(onOpenHistory: () -> Unit, onOpenItemReport: () -> Unit, onOpenManageItems: () -> Unit, onOpenVendors: () -> Unit, onOpenPurchases: () -> Unit, onOpenBackupRestore: () -> Unit, onLogout: () -> Unit, userName: String, isDeveloper: Boolean, enabled: Boolean) {
@@ -224,18 +450,6 @@ private fun DesktopSidebar(onOpenHistory: () -> Unit, onOpenItemReport: () -> Un
 }
 
 @Composable
-fun SalesmanSelector(salesmen: List<Salesman>, selected: Salesman?, onSelect: (Salesman) -> Unit, onAddNew: () -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Box(Modifier.weight(1f)) {
-            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(6.dp)) { Text(selected?.name ?: "Select Salesman / Account", maxLines = 1) }
-            DropdownMenu(expanded, { expanded = false }) { salesmen.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { onSelect(s); expanded = false }) } }
-        }
-        Spacer(Modifier.width(8.dp)); IconButton(onClick = onAddNew, modifier = Modifier.background(AppGreen, RoundedCornerShape(6.dp))) { Icon(Icons.Default.Add, "Add Salesman", tint = Color.White) }
-    }
-}
-
-@Composable
 private fun SidebarButton(text: String, icon: ImageVector, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val bg = if (selected) AppGreen.copy(alpha = 0.1f) else Color.Transparent; val contentColor = if (selected) AppGreen else Color.DarkGray
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(bg, RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -246,18 +460,39 @@ private fun SidebarButton(text: String, icon: ImageVector, selected: Boolean = f
 @Composable
 private fun RightCheckoutPanel(
     form: BillingFormState, viewModel: BillingViewModel, previousBalance: Double,
-    salesmen: List<Salesman>, selectedSalesman: Salesman?, onSalesmanSelect: (Salesman) -> Unit, onAddSalesmanClick: () -> Unit,
+    onManageCustomers: () -> Unit,
+    accounts: List<CustomerAccount>,
+    onEditAccount: (CustomerAccount) -> Unit,
+    onDeleteAccount: (CustomerAccount) -> Unit,
     isPrinting: Boolean, onPrint: () -> Unit, onReset: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     Column(Modifier.width(360.dp).fillMaxHeight().background(Color(0xFFFAFAFA)).verticalScroll(rememberScrollState())) {
         Column(Modifier.padding(24.dp).fillMaxWidth()) {
             Text("Customer Details", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50)); Spacer(Modifier.height(12.dp))
+
+            CustomerSelector(
+                accounts = accounts,
+                selected = form.selectedCustomerAccount,
+                onSelect = {
+                    form.selectedCustomerAccount = it
+                    if (it != null) {
+                        form.customer = it.name
+                        form.phone = it.phone1
+                        form.phone2 = it.phone2
+                        form.address = it.address
+                        form.accountNo = it.accountNo
+                    }
+                },
+                onManageCustomers = onManageCustomers,
+                onEdit = onEditAccount,
+                onDelete = onDeleteAccount
+            )
+            Spacer(Modifier.height(8.dp))
+
             OutlinedTextField(value = form.customer, onValueChange = { form.customer = it }, label = { Text("Name", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = form.phone, onValueChange = { form.phone = sanitizePhone(it) }, label = { Text("Phone 1", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = form.phone2, onValueChange = { form.phone2 = sanitizePhone(it) }, label = { Text("Phone 2", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = form.address, onValueChange = { form.address = it }, label = { Text("Address", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = form.accountNo, onValueChange = { form.accountNo = it }, label = { Text("Account No", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(12.dp))
-            SalesmanSelector(salesmen = salesmen, selected = selectedSalesman, onSelect = onSalesmanSelect, onAddNew = onAddSalesmanClick)
+            OutlinedTextField(value = form.phone, onValueChange = { form.phone = sanitizePhone(it) }, label = { Text("Phone 1", fontSize = 12.sp) }, singleLine = true, shape = RoundedCornerShape(6.dp), enabled = !isPrinting, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(12.dp))
+
             if (previousBalance > 0.0) { Spacer(Modifier.height(8.dp)); Text("Old Pending: Rs ${formatMoney(previousBalance)}", color = Color(0xFFE65100), fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }
         HorizontalDivider(color = Color(0xFFE0E0E0))
@@ -270,9 +505,16 @@ private fun RightCheckoutPanel(
         Column(Modifier.padding(24.dp).fillMaxWidth()) {
             AmountBreakdown(form.subtotal, form.discountValue, form.extraValue)
             if (form.balance > 0.005) { Spacer(Modifier.height(8.dp)); BalanceBanner(form.receivedValue, form.balance) }
-            Spacer(Modifier.height(24.dp))
+
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { form.shouldPrint = !form.shouldPrint; scope.launch { viewModel.saveShouldPrint(form.shouldPrint) } }) {
+                Checkbox(checked = form.shouldPrint, onCheckedChange = { form.shouldPrint = it; scope.launch { viewModel.saveShouldPrint(it) } }, colors = CheckboxDefaults.colors(checkedColor = AppGreen))
+                Text("Print Bill", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(Modifier.height(16.dp))
             Button(onClick = onPrint, enabled = !isPrinting, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = AppGreen)) {
-                Icon(Icons.Default.Print, null); Spacer(Modifier.width(8.dp)); Text("PRINT & SAVE BILL", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Icon(Icons.Default.Print, null); Spacer(Modifier.width(8.dp)); Text(if(form.shouldPrint) "PRINT & SAVE BILL" else "SAVE BILL (NO PRINT)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
             Spacer(Modifier.height(8.dp)); TextButton(onClick = onReset, enabled = !isPrinting, modifier = Modifier.fillMaxWidth()) { Text("Reset All Fields", color = Color.Red, fontWeight = FontWeight.Medium) }
         }
@@ -283,16 +525,35 @@ private fun RightCheckoutPanel(
 private fun MobileHeaderBlock(
     form: BillingFormState, onOpenHistory: () -> Unit, onOpenItemReport: () -> Unit, onOpenManageItems: () -> Unit, onOpenVendors: () -> Unit, onOpenPurchases: () -> Unit,
     onOpenBackupRestore: () -> Unit, onLogout: () -> Unit, userName: String, isDeveloper: Boolean, enabled: Boolean = true,
-    salesmen: List<Salesman>, selectedSalesman: Salesman?, onSalesmanSelect: (Salesman) -> Unit, onAddSalesmanClick: () -> Unit, previousBalance: Double = 0.0
+    onManageCustomers: () -> Unit, previousBalance: Double = 0.0,
+    accounts: List<CustomerAccount>,
+    onEditAccount: (CustomerAccount) -> Unit,
+    onDeleteAccount: (CustomerAccount) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Billing System", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppGreen); Spacer(Modifier.height(8.dp))
+
+        CustomerSelector(
+            accounts = accounts,
+            selected = form.selectedCustomerAccount,
+            onSelect = {
+                form.selectedCustomerAccount = it
+                if (it != null) {
+                    form.customer = it.name
+                    form.phone = it.phone1
+                    form.phone2 = it.phone2
+                    form.address = it.address
+                    form.accountNo = it.accountNo
+                }
+            },
+            onManageCustomers = onManageCustomers,
+            onEdit = onEditAccount,
+            onDelete = onDeleteAccount
+        )
+
         OutlinedTextField(value = form.customer, onValueChange = { form.customer = it }, label = { Text("Customer Name") }, shape = RoundedCornerShape(10.dp), leadingIcon = { Icon(Icons.Default.Person, null) }, singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = form.phone, onValueChange = { form.phone = sanitizePhone(it) }, label = { Text("Customer Number 1") }, shape = RoundedCornerShape(10.dp), leadingIcon = { Icon(Icons.Default.Phone, null) }, singleLine = true, enabled = enabled, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = form.phone2, onValueChange = { form.phone2 = sanitizePhone(it) }, label = { Text("Customer Number 2") }, shape = RoundedCornerShape(10.dp), leadingIcon = { Icon(Icons.Default.Phone, null) }, singleLine = true, enabled = enabled, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = form.address, onValueChange = { form.address = it }, label = { Text("Address") }, shape = RoundedCornerShape(10.dp), leadingIcon = { Icon(Icons.Default.Home, null) }, singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = form.accountNo, onValueChange = { form.accountNo = it }, label = { Text("Account No") }, shape = RoundedCornerShape(10.dp), leadingIcon = { Icon(Icons.Default.AccountBox, null) }, singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
-        SalesmanSelector(salesmen = salesmen, selected = selectedSalesman, onSelect = onSalesmanSelect, onAddNew = onAddSalesmanClick)
+
         if (previousBalance > 0.0) { Text("Old Pending: Rs ${formatMoney(previousBalance)}", color = Color(0xFFE65100), fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onOpenHistory, enabled = enabled) { Text("History", fontSize = 12.sp) }
@@ -309,13 +570,13 @@ private fun MobileHeaderBlock(
 }
 
 @Composable
-private fun MobileActionBlock(total: Double, summary: String, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit) {
+private fun MobileActionBlock(total: Double, summary: String, enabled: Boolean, onPrint: () -> Unit, onReset: () -> Unit, shouldPrint: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f)) {
             Text("GRAND TOTAL", fontSize = 10.sp, color = AppGreen, fontWeight = FontWeight.Bold); Text("Rs ${formatMoney(total)}", fontSize = 18.sp, fontWeight = FontWeight.Bold); Text(summary, fontSize = 9.sp, color = Color.Gray)
         }
         TextButton(onClick = onReset, enabled = enabled) { Text("Reset", color = Color.Red) }
-        Button(onClick = onPrint, enabled = enabled, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))) { Text("PRINT", fontWeight = FontWeight.Bold) }
+        Button(onClick = onPrint, enabled = enabled, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121))) { Text(if(shouldPrint) "PRINT" else "SAVE", fontWeight = FontWeight.Bold) }
     }
 }
 

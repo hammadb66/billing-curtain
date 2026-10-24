@@ -10,13 +10,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,17 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.billing.AppServices
 import com.example.billing.data.BillRepository
-import com.example.billing.model.Bill
-import com.example.billing.model.ItemData
-import com.example.billing.model.MasterItem
-import com.example.billing.model.Product
-import com.example.billing.model.RoomData
-import com.example.billing.utils.PlatformBackHandler
-import com.example.billing.utils.formatMoney
-import com.example.billing.utils.resolveDiscount
-import com.example.billing.utils.sanitizeDecimal
-import com.example.billing.utils.sanitizePhone
-import com.example.billing.utils.toInputString
+import com.example.billing.model.*
+import com.example.billing.utils.*
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -66,13 +51,25 @@ fun EditBillScreen(bill: Bill, repository: BillRepository, onClose: () -> Unit) 
     var discountIsPercent by remember { mutableStateOf(false) }; var received by remember { mutableStateOf(bill.received.toInputString()) }
     var isDirty by remember { mutableStateOf(false) }; var showDiscard by remember { mutableStateOf(false) }
     var addItemFor by remember { mutableStateOf<EditRoom?>(null) }; var roomToDelete by remember { mutableStateOf<EditRoom?>(null) }; var isSaving by remember { mutableStateOf(false) }
+
     val services = koinInject<AppServices>(); var masterItems by remember { mutableStateOf<List<MasterItem>>(emptyList()) }
+    var accounts by remember { mutableStateOf<List<CustomerAccount>>(emptyList()) }
+    var selectedAccount by remember { mutableStateOf<CustomerAccount?>(null) }
+    var showManageCustomers by remember { mutableStateOf(false) }
+
     var showProduct by remember { mutableStateOf(bill.showProduct) }; var showCategory by remember { mutableStateOf(bill.showCategory) }; var showSubcategory by remember { mutableStateOf(bill.showSubcategory) }
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }; var productStocks by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
-    LaunchedEffect(Unit) { val allProds = services.vendors.listProductsWithStock(); products = allProds; productStocks = allProds.associate { it.id to (it.liveStock ?: it.openingStock) }; masterItems = services.settings.getMasterItems() }
+
+    LaunchedEffect(Unit) {
+        val allProds = services.vendors.listProductsWithStock(); products = allProds; productStocks = allProds.associate { it.id to (it.liveStock ?: it.openingStock) }; masterItems = services.settings.getMasterItems()
+        accounts = services.vendors.listCustomerAccounts()
+        selectedAccount = accounts.firstOrNull { it.id == bill.salesmanId }
+    }
+
     val rooms = remember { mutableStateListOf<EditRoom>().apply { bill.rooms.forEach { r -> add(EditRoom(r.roomName, r.items.map { EditItem(it.name, it.qty, it.rate, it.unit, it.productId, it.productName, it.categoryName, it.subcategoryName, it.displayType) })) } } }
     val subtotal = rooms.sumOf { it.total }; val discountValue = resolveDiscount(subtotal, discount, discountIsPercent); val extraValue = extraCharges.toDoubleOrNull() ?: 0.0
     val grandTotal = (subtotal - discountValue + extraValue).coerceAtLeast(0.0); val receivedValue = received.toDoubleOrNull() ?: 0.0; val pending = (grandTotal - receivedValue).coerceAtLeast(0.0)
+
     fun requestBack() { if (isDirty) showDiscard = true else onClose() }
     fun save() {
         if (isSaving) return
@@ -88,7 +85,7 @@ fun EditBillScreen(bill: Bill, repository: BillRepository, onClose: () -> Unit) 
         scope.launch {
             isSaving = true
             try {
-                repository.updateBill(bill.id, customer.trim(), phone, address, phone2, accountNo, finalRooms, discountValue, extraValue, receivedValue, bill.salesmanId, showProduct, showCategory, showSubcategory)
+                repository.updateBill(bill.id, customer.trim(), phone, address, phone2, accountNo, finalRooms, discountValue, extraValue, receivedValue, selectedAccount?.id, showProduct, showCategory, showSubcategory)
                 onClose()
             } catch (e: Exception) { isSaving = false; snackbar.showSnackbar("Save failed: ${e.message}") }
         }
@@ -105,6 +102,24 @@ fun EditBillScreen(bill: Bill, repository: BillRepository, onClose: () -> Unit) 
                 item {
                     SectionCard(title = "Customer Details") {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            CustomerSelector(
+                                accounts = accounts,
+                                selected = selectedAccount,
+                                onSelect = {
+                                    selectedAccount = it
+                                    if (it != null) {
+                                        customer = it.name
+                                        phone = it.phone1
+                                        phone2 = it.phone2
+                                        address = it.address
+                                        accountNo = it.accountNo
+                                    }
+                                    isDirty = true
+                                },
+                                onManageCustomers = { showManageCustomers = true },
+                                onEdit = { showManageCustomers = true },
+                                onDelete = { showManageCustomers = true }
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 OutlinedTextField(value = customer, onValueChange = { customer = it; isDirty = true }, label = { Text("Customer Name") }, leadingIcon = { Icon(Icons.Default.Person, null) }, singleLine = true, shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f))
                                 OutlinedTextField(value = phone, onValueChange = { phone = sanitizePhone(it); isDirty = true }, label = { Text("Phone Number 1") }, leadingIcon = { Icon(Icons.Default.Phone, null) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f))
@@ -128,6 +143,19 @@ fun EditBillScreen(bill: Bill, repository: BillRepository, onClose: () -> Unit) 
     addItemFor?.let { room -> AddItemDialog(products, { p -> room.items.add(EditItem(p.name, "", "", p.unit, p.id, p.name, p.categoryName, p.subcategoryName)); isDirty = true; addItemFor = null }, { addItemFor = null }, { addItemFor = null }) }
     roomToDelete?.let { room -> ConfirmDialog("Delete Section", "\"${room.name.ifBlank { "All Items" }}\" and all its items will be removed. Are you sure?", "Delete", { rooms.remove(room); isDirty = true; roomToDelete = null }, { roomToDelete = null }) }
     if (showDiscard) AlertDialog(onDismissRequest = { showDiscard = false }, title = { Text("Discard changes?", fontWeight = FontWeight.Bold) }, text = { Text("You have unsaved changes that will be lost.") }, dismissButton = { TextButton(onClick = { showDiscard = false }) { Text("Stay") } }, confirmButton = { TextButton(onClick = { showDiscard = false; onClose() }) { Text("Discard", color = Color.Red, fontWeight = FontWeight.Bold) } })
+
+    if (showManageCustomers) {
+        CustomerManageDialog(services = services, onClose = {
+            showManageCustomers = false
+            scope.launch {
+                accounts = services.vendors.listCustomerAccounts()
+                // NAYA FIX: Agar koi customer pehle se select tha, toh uski nayi detail (naya naam) utha lo
+                if (selectedAccount != null) {
+                    selectedAccount = accounts.firstOrNull { it.id == selectedAccount?.id }
+                }
+            }
+        })
+    }
 }
 
 @Composable

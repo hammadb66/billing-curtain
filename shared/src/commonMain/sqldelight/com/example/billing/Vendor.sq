@@ -57,17 +57,24 @@ CREATE TABLE IF NOT EXISTS PurchaseEntity (
 );
 
 
--- ============ SALESMAN / ACCOUNT HEAD ============
+-- ============ CUSTOMER ACCOUNTS (Pehle SalesmanEntity tha) ============
 CREATE TABLE IF NOT EXISTS SalesmanEntity (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE
+    name TEXT NOT NULL UNIQUE,
+    phone1 TEXT NOT NULL DEFAULT '',
+    phone2 TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    accountNo TEXT NOT NULL DEFAULT ''
 );
 
 selectAllSalesmen:
 SELECT * FROM SalesmanEntity ORDER BY name;
 
 insertSalesman:
-INSERT INTO SalesmanEntity(name) VALUES (?);
+INSERT INTO SalesmanEntity(name, phone1, phone2, address, accountNo) VALUES (?, ?, ?, ?, ?);
+
+updateSalesman:
+UPDATE SalesmanEntity SET name=?, phone1=?, phone2=?, address=?, accountNo=? WHERE id=?;
 
 deleteSalesman:
 DELETE FROM SalesmanEntity WHERE id = ?;

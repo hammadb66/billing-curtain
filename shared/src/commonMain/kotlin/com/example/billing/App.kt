@@ -247,6 +247,7 @@ fun App(
                             composable<BillingRoute.ItemReport> {
                                 ReportScreen(
                                     billRepo = services.bills,
+                                    printer = printer, // <-- Yahan printer pass kiya
                                     onBack = { navController.popBackStack() }
                                 )
                             }

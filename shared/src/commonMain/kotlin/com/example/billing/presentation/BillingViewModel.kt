@@ -44,8 +44,14 @@ class BillingViewModel(
         } else _previousBalance.value = 0.0
     }
 
+    fun saveShouldPrint(value: Boolean) {
+        viewModelScope.launch {
+            settings.put("should_print", value.toString())
+        }
+    }
+
     fun saveBill(
-        userName: String, salesmanId: Long?,
+        userName: String,
         showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean,
         onSuccess: (String, String, String, String, List<RoomData>, Double, Double, Double) -> Unit,
         onError: (String) -> Unit
@@ -54,7 +60,8 @@ class BillingViewModel(
             try {
                 val invoiceNo = repository.insertBill(
                     form.customer.trim(), form.phone, form.address.trim(), form.phone2.trim(), form.accountNo.trim(),
-                    form.toRoomDataList(), nowIso(), form.discountValue, form.extraValue, form.receivedValue, salesmanId,
+                    form.toRoomDataList(), nowIso(), form.discountValue, form.extraValue, form.receivedValue,
+                    form.selectedCustomerAccount?.id,
                     userName, showProduct, showCategory, showSubcategory
                 )
                 onSuccess(invoiceNo, form.customer.trim(), form.phone, nowIso(), form.toRoomDataList(), form.discountValue, form.extraValue, form.receivedValue)

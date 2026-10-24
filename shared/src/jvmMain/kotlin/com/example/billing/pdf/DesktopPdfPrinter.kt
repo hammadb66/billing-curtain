@@ -12,7 +12,6 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts
 import org.apache.pdfbox.printing.PDFPageable
 import java.awt.print.PrinterJob
 
-
 class DesktopPdfPrinter : PdfPrinter {
 
     override suspend fun print(title: String, rows: List<PdfRow>): Boolean =
@@ -43,7 +42,7 @@ class DesktopPdfPrinter : PdfPrinter {
         var page = PDPage(pageSize)
         doc.addPage(page)
         var stream = PDPageContentStream(doc, page)
-        var y = pageH - margin   // PDFBox me y neeche se shuru hota hai, is liye upar se ghatate hain
+        var y = pageH - margin
 
         for (row in rows) {
             val size = row.fontSize
@@ -69,7 +68,12 @@ class DesktopPdfPrinter : PdfPrinter {
                 RowKind.TEXT -> {
                     val font = if (row.bold) bold else regular
                     val baseline = y - size
-                    stream.drawText(font, size, margin, baseline, row.left)
+
+                    // NAYA FIX: Left text ko limit me rakhein taake Qty par overlap na ho
+                    val maxLeftWidth = PdfLayout.QTY_X - margin - 10f
+                    val safeLeftText = fitText(font, size, maxLeftWidth, row.left)
+
+                    stream.drawText(font, size, margin, baseline, safeLeftText)
                     stream.drawText(font, size, PdfLayout.QTY_X, baseline, row.qty)
                     stream.drawText(font, size, PdfLayout.RATE_X, baseline, row.rate)
                     if (row.right.isNotEmpty()) {
@@ -86,6 +90,16 @@ class DesktopPdfPrinter : PdfPrinter {
         return doc
     }
 
+    // NAYA FIX: Text ko cut karne ka function
+    private fun fitText(font: PDFont, size: Float, maxWidth: Float, text: String): String {
+        if (text.isEmpty()) return ""
+        var result = safe(text)
+        while (font.getStringWidth(result) / 1000f * size > maxWidth && result.length > 3) {
+            result = result.dropLast(4) + "..."
+        }
+        return result
+    }
+
     private fun PDPageContentStream.drawText(font: PDFont, size: Float, x: Float, y: Float, text: String) {
         if (text.isEmpty()) return
         beginText()
@@ -95,7 +109,6 @@ class DesktopPdfPrinter : PdfPrinter {
         endText()
     }
 
-    /** Standard font jo characters nahi samajhta unhein '?' bana deta hai (warna crash hota hai). */
     private fun safe(text: String): String =
         text.map { if (it.code in 32..126 || it.code in 160..255) it else '?' }.joinToString("")
 }

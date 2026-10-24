@@ -1,7 +1,16 @@
 package com.example.billing.model
 
 import kotlinx.serialization.Serializable
-data class Salesman(val id: Long, val name: String)
+
+// NAYA: Salesman ki jagah CustomerAccount
+data class CustomerAccount(
+    val id: Long,
+    val name: String,
+    val phone1: String = "",
+    val phone2: String = "",
+    val address: String = "",
+    val accountNo: String = ""
+)
 
 @Serializable
 data class ItemData(
@@ -50,9 +59,9 @@ data class Bill(
     val id: Long,
     val customer: String,
     val phone: String,
-    val address: String = "",      // NAYA
-    val phone2: String = "",       // NAYA
-    val accountNo: String = "",    // NAYA
+    val address: String = "",
+    val phone2: String = "",
+    val accountNo: String = "",
     val date: String,
     val rooms: List<RoomData>,
     val discount: Double = 0.0,
@@ -62,7 +71,7 @@ data class Bill(
     val showProduct: Boolean = false,
     val showCategory: Boolean = false,
     val showSubcategory: Boolean = false,
-    val salesmanId: Long? = null,
+    val salesmanId: Long? = null, // Ab ye CustomerAccount ID ban gaya hai
     val salesmanName: String = ""
 ) {
     val invoiceText: String get() = invoiceLabel.ifBlank { "#$id" }

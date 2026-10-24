@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.billing.utils.resolveDiscount
+import com.example.billing.utils.toInputString
 
 private var idCounter = 0L
 private fun nextId(): Long = idCounter++
@@ -43,13 +44,15 @@ class RoomState {
     val items = mutableStateListOf<ItemState>()
     val total: Double get() = items.sumOf { it.total }
 
-    fun addProduct(product: Product,stock: Double) {
+    fun addProduct(product: Product, stock: Double) {
         val item = ItemState(product.name, product.unit)
         item.productId = product.id
         item.productName = product.name
         item.categoryName = product.categoryName
         item.subcategoryName = product.subcategoryName
         item.stock = stock
+        // Auto-fill Sale Price into Rate
+        item.rate = product.salePrice.toInputString()
         items.add(item)
     }
 
@@ -61,6 +64,7 @@ class RoomState {
             categoryName = item.categoryName
             subcategoryName = item.subcategoryName
             displayType = item.displayType
+            rate = item.rate // Duplicate rate as well
         }
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
@@ -83,9 +87,9 @@ class RoomState {
 class BillingFormState {
     var customer by mutableStateOf("")
     var phone by mutableStateOf("")
-    var address by mutableStateOf("")     // NAYA
-    var phone2 by mutableStateOf("")      // NAYA
-    var accountNo by mutableStateOf("")   // NAYA
+    var address by mutableStateOf("")
+    var phone2 by mutableStateOf("")
+    var accountNo by mutableStateOf("")
     var discount by mutableStateOf("")
     var showProduct by mutableStateOf(true)
     var showCategory by mutableStateOf(false)
@@ -94,7 +98,10 @@ class BillingFormState {
     var extraCharges by mutableStateOf("")
     var received by mutableStateOf("")
     val rooms = mutableStateListOf(RoomState())
-    var salesmanId by mutableStateOf<Long?>(null)
+
+    // NAYA: Customer ID Selector & Print Toggle
+    var selectedCustomerAccount by mutableStateOf<CustomerAccount?>(null)
+    var shouldPrint by mutableStateOf(true) // Print toggle state
 
     val subtotal: Double get() = rooms.sumOf { it.total }
     val discountValue: Double get() = resolveDiscount(subtotal, discount, discountIsPercent)
@@ -118,6 +125,8 @@ class BillingFormState {
         discountIsPercent = false
         extraCharges = ""
         received = ""
+        selectedCustomerAccount = null
+        // shouldPrint remains as is (preserves user preference)
         rooms.clear()
         rooms.add(RoomState())
     }

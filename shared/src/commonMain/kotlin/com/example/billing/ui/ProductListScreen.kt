@@ -77,21 +77,9 @@ fun ProductListScreen(repository: VendorRepository, onBack: () -> Unit) {
                         contentColor = AppGreen,
                         divider = { HorizontalDivider(color = Color(0xFFE0E0E0)) }
                     ) {
-                        Tab(
-                            selected = tab == InventoryTab.PRODUCTS,
-                            onClick = { tab = InventoryTab.PRODUCTS },
-                            text = { Text("Products (${products.size})", fontWeight = FontWeight.SemiBold) }
-                        )
-                        Tab(
-                            selected = tab == InventoryTab.CATEGORIES,
-                            onClick = { tab = InventoryTab.CATEGORIES },
-                            text = { Text("Categories (${categories.size})", fontWeight = FontWeight.SemiBold) }
-                        )
-                        Tab(
-                            selected = tab == InventoryTab.SUBCATEGORIES,
-                            onClick = { tab = InventoryTab.SUBCATEGORIES },
-                            text = { Text("Subcategories", fontWeight = FontWeight.SemiBold) }
-                        )
+                        Tab(selected = tab == InventoryTab.PRODUCTS, onClick = { tab = InventoryTab.PRODUCTS }, text = { Text("Products (${products.size})", fontWeight = FontWeight.SemiBold) })
+                        Tab(selected = tab == InventoryTab.CATEGORIES, onClick = { tab = InventoryTab.CATEGORIES }, text = { Text("Categories (${categories.size})", fontWeight = FontWeight.SemiBold) })
+                        Tab(selected = tab == InventoryTab.SUBCATEGORIES, onClick = { tab = InventoryTab.SUBCATEGORIES }, text = { Text("Subcategories", fontWeight = FontWeight.SemiBold) })
                     }
                 }
             }
@@ -156,23 +144,45 @@ private fun ProductsTabSplit(
 
         if (isWide) {
             Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // LIST PANEL
                 Card(Modifier.weight(1f).fillMaxHeight().focusRequester(listFocus), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), elevation = CardDefaults.cardElevation(0.dp)) {
                     ProductListContent(query, { query = it }, selectedProduct, isNew, filtered, { selectedProduct = it; isNew = false }, { selectedProduct = null; isNew = true; clearForm(); scope.launch { kotlinx.coroutines.delay(100); nameFocus.requestFocus() } })
                 }
-                // FORM PANEL
                 Card(Modifier.weight(1.5f).fillMaxHeight(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), elevation = CardDefaults.cardElevation(0.dp)) {
                     if (selectedProduct == null && !isNew) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Select a product from the list or add a new one.", color = Color.Gray, fontSize = 15.sp) }
                     } else {
                         ProductForm(selectedProduct, categories, subcategories, isLocked, { isLocked = it }, isSaving, nameFocus, formName, { formName = it }, formCatId, { formCatId = it }, formSubId, { formSubId = it }, formPrice, { formPrice = it }, formSalePrice, { formSalePrice = it }, formStock, { formStock = it }, formUnit, { formUnit = it },
-                            onSave = { p, lock -> saveProduct(p, lock, repository, isSaving, { isSaving = true }, { isSaving = false }, { selectedProduct = null; isNew = false; clearForm() }, { isNew = true }, onReload, ::showSnack) },
-                            onDelete = { deleteProduct(selectedProduct, repository, isSaving, { isSaving = true }, { isSaving = false }, { selectedProduct = null; isNew = false; clearForm() }, onReload, ::showSnack) })
+                            onSave = { p, lock ->
+                                scope.launch {
+                                    isSaving = true
+                                    val err = if (p.id == 0L) repository.addProduct(p) else repository.updateProduct(p)
+                                    isSaving = false
+                                    if (err != null) { showSnack(err) }
+                                    else {
+                                        if (!lock) { selectedProduct = null; isNew = false; clearForm() } else { selectedProduct = null; isNew = true; clearForm() }
+                                        onReload()
+                                        showSnack("Product saved successfully!")
+                                    }
+                                }
+                            },
+                            onDelete = {
+                                scope.launch {
+                                    if (selectedProduct != null) {
+                                        isSaving = true
+                                        val used = repository.isProductUsedInAnyBill(selectedProduct!!.id)
+                                        if (used) { isSaving = false; showSnack("Cannot delete! Product is used in bills.") }
+                                        else {
+                                            repository.deleteProduct(selectedProduct!!.id)
+                                            isSaving = false; showSnack("Product deleted!")
+                                            selectedProduct = null; isNew = false; clearForm(); onReload()
+                                        }
+                                    }
+                                }
+                            })
                     }
                 }
             }
         } else {
-            // MOBILE LAYOUT
             if (selectedProduct == null && !isNew) {
                 ProductListContent(query, { query = it }, selectedProduct, isNew, filtered, { selectedProduct = it; isNew = false }, { selectedProduct = null; isNew = true; clearForm(); scope.launch { kotlinx.coroutines.delay(100); nameFocus.requestFocus() } }, Modifier.fillMaxSize())
             } else {
@@ -182,8 +192,32 @@ private fun ProductsTabSplit(
                         Text("Back to List", fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
                     }
                     ProductForm(selectedProduct, categories, subcategories, isLocked, { isLocked = it }, isSaving, nameFocus, formName, { formName = it }, formCatId, { formCatId = it }, formSubId, { formSubId = it }, formPrice, { formPrice = it }, formSalePrice, { formSalePrice = it }, formStock, { formStock = it }, formUnit, { formUnit = it },
-                        onSave = { p, lock -> saveProduct(p, lock, repository, isSaving, { isSaving = true }, { isSaving = false }, { selectedProduct = null; isNew = false; clearForm() }, { isNew = true }, onReload, ::showSnack) },
-                        onDelete = { deleteProduct(selectedProduct, repository, isSaving, { isSaving = true }, { isSaving = false }, { selectedProduct = null; isNew = false; clearForm() }, onReload, ::showSnack) })
+                        onSave = { p, lock ->
+                            scope.launch {
+                                isSaving = true
+                                val err = if (p.id == 0L) repository.addProduct(p) else repository.updateProduct(p)
+                                isSaving = false
+                                if (err != null) { showSnack(err) }
+                                else {
+                                    if (!lock) { selectedProduct = null; isNew = false; clearForm() } else { selectedProduct = null; isNew = true; clearForm() }
+                                    onReload(); showSnack("Product saved!")
+                                }
+                            }
+                        },
+                        onDelete = {
+                            scope.launch {
+                                if (selectedProduct != null) {
+                                    isSaving = true
+                                    val used = repository.isProductUsedInAnyBill(selectedProduct!!.id)
+                                    if (used) { isSaving = false; showSnack("Cannot delete! Used in bills.") }
+                                    else {
+                                        repository.deleteProduct(selectedProduct!!.id)
+                                        isSaving = false; showSnack("Deleted!")
+                                        selectedProduct = null; isNew = false; clearForm(); onReload()
+                                    }
+                                }
+                            }
+                        })
                 }
             }
         }
@@ -191,21 +225,11 @@ private fun ProductsTabSplit(
 }
 
 @Composable
-private fun ProductListContent(
-    query: String, onQueryChange: (String) -> Unit,
-    selectedProduct: Product?, isNew: Boolean, filtered: List<Product>,
-    onProductSelect: (Product) -> Unit, onAddNew: () -> Unit, modifier: Modifier = Modifier
-) {
+private fun ProductListContent(query: String, onQueryChange: (String) -> Unit, selectedProduct: Product?, isNew: Boolean, filtered: List<Product>, onProductSelect: (Product) -> Unit, onAddNew: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize().padding(16.dp)) {
-        OutlinedTextField(
-            value = query, onValueChange = onQueryChange, placeholder = { Text("Search product...", fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp), tint = Color.Gray) },
-            modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(6.dp)
-        )
+        OutlinedTextField(value = query, onValueChange = onQueryChange, placeholder = { Text("Search product...", fontSize = 13.sp) }, leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp), tint = Color.Gray) }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(6.dp))
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onAddNew, modifier = Modifier.fillMaxWidth().height(40.dp), shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))) {
-            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Add New Product", fontSize = 13.sp)
-        }
+        Button(onClick = onAddNew, modifier = Modifier.fillMaxWidth().height(40.dp), shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3E50))) { Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Add New Product", fontSize = 13.sp) }
         Spacer(Modifier.height(12.dp))
         HorizontalDivider(color = Color(0xFFE0E0E0))
         LazyColumn(Modifier.fillMaxSize()) {
@@ -224,24 +248,14 @@ private fun ProductListContent(
     }
 }
 
-// Helpers for saving/deleting to keep UI clean
-private fun saveProduct(p: Product, lock: Boolean, repository: VendorRepository, isSaving: Boolean, setSaving: (Boolean) -> Unit, clearSaving: () -> Unit, clearForm: () -> Unit, setNew: () -> Unit, onReload: () -> Unit, showSnack: (String) -> Unit) {
-    // Logic moved to caller coroutine scope
-}
-
-private fun deleteProduct(p: Product?, repository: VendorRepository, isSaving: Boolean, setSaving: (Boolean) -> Unit, clearSaving: () -> Unit, clearForm: () -> Unit, onReload: () -> Unit, showSnack: (String) -> Unit) {
-    // Logic moved to caller coroutine scope
-}
-
 // ======================= CATEGORIES TAB =======================
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CategoriesTabSplit(
-    repository: VendorRepository, categories: List<Category>, products: List<Product>, onReload: () -> Unit, snackbar: SnackbarHostState
-) {
+private fun CategoriesTabSplit(repository: VendorRepository, categories: List<Category>, products: List<Product>, onReload: () -> Unit, snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Category?>(null) }
+    var isAddingNew by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     fun showSnack(msg: String) { scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(msg) } }
@@ -252,24 +266,48 @@ private fun CategoriesTabSplit(
         if (isWide) {
             Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(Modifier.weight(1f).fillMaxHeight(), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))) {
-                    CategoryListContent(query, { query = it }, selected, filtered, { selected = it; text = it.name }, { selected = null; text = "" })
+                    CategoryListContent(query, { query = it }, selected, filtered, { selected = it; text = it.name; isAddingNew = false }, { selected = null; text = ""; isAddingNew = true })
                 }
                 Card(Modifier.weight(1.5f).fillMaxHeight(), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))) {
-                    CategoryFormContent(selected, text, { text = it }, isSaving,
-                        onSave = { scope.launch { isSaving = true; try { val err = if (selected == null) repository.addCategory(text) else repository.updateCategory(selected!!.id, text); if (err != null) showSnack(err) else { text = ""; selected = null; onReload(); showSnack("Saved!") } } finally { isSaving = false } } },
-                        onDelete = { scope.launch { isSaving = true; try { val cat = selected!!; if (products.any { it.categoryId == cat.id }) showSnack("Cannot delete! Products exist here.") else { repository.deleteCategory(cat.id); text = ""; selected = null; onReload(); showSnack("Deleted") } } finally { isSaving = false } } }
-                    )
+                    if (selected == null && !isAddingNew) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Select a category or add a new one.", color = Color.Gray, fontSize = 15.sp) }
+                    } else {
+                        CategoryFormContent(selected, text, { text = it }, isSaving,
+                            onSave = { scope.launch {
+                                isSaving = true
+                                val err = if (selected == null) repository.addCategory(text) else repository.updateCategory(selected!!.id, text)
+                                isSaving = false
+                                if (err != null) showSnack(err) else { text = ""; selected = null; isAddingNew = false; onReload(); showSnack("Saved!") }
+                            } },
+                            onDelete = { scope.launch {
+                                isSaving = true
+                                val cat = selected!!
+                                if (products.any { it.categoryId == cat.id }) { isSaving = false; showSnack("Cannot delete! Products exist here.") }
+                                else { repository.deleteCategory(cat.id); isSaving = false; text = ""; selected = null; isAddingNew = false; onReload(); showSnack("Deleted") }
+                            } }
+                        )
+                    }
                 }
             }
         } else {
-            if (selected == null) {
-                CategoryListContent(query, { query = it }, selected, filtered, { selected = it; text = it.name }, { selected = null; text = "" })
+            if (selected == null && !isAddingNew) {
+                CategoryListContent(query, { query = it }, selected, filtered, { selected = it; text = it.name }, { selected = null; text = ""; isAddingNew = true })
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    IconButton(onClick = { selected = null; text = "" }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50)) }
+                    IconButton(onClick = { selected = null; isAddingNew = false; text = "" }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50)) }
                     CategoryFormContent(selected, text, { text = it }, isSaving,
-                        onSave = { scope.launch { isSaving = true; try { val err = repository.updateCategory(selected!!.id, text); if (err != null) showSnack(err) else { text = ""; selected = null; onReload(); showSnack("Saved!") } } finally { isSaving = false } } },
-                        onDelete = { scope.launch { isSaving = true; try { val cat = selected!!; if (products.any { it.categoryId == cat.id }) showSnack("Cannot delete! Products exist here.") else { repository.deleteCategory(cat.id); text = ""; selected = null; onReload(); showSnack("Deleted") } } finally { isSaving = false } } }
+                        onSave = { scope.launch {
+                            isSaving = true
+                            val err = if (selected == null) repository.addCategory(text) else repository.updateCategory(selected!!.id, text)
+                            isSaving = false
+                            if (err != null) showSnack(err) else { text = ""; selected = null; isAddingNew = false; onReload(); showSnack("Saved!") }
+                        } },
+                        onDelete = { scope.launch {
+                            isSaving = true
+                            val cat = selected!!
+                            if (products.any { it.categoryId == cat.id }) { isSaving = false; showSnack("Cannot delete! Products exist here.") }
+                            else { repository.deleteCategory(cat.id); isSaving = false; text = ""; selected = null; isAddingNew = false; onReload(); showSnack("Deleted") }
+                        } }
                     )
                 }
             }
@@ -317,6 +355,7 @@ private fun SubcategoriesTabSplit(repository: VendorRepository, categories: List
     var query by remember { mutableStateOf("") }
     var selectedCatId by remember { mutableStateOf<Long?>(categories.firstOrNull()?.id) }
     var selectedSub by remember { mutableStateOf<Subcategory?>(null) }
+    var isAddingNew by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     fun showSnack(msg: String) { scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(msg) } }
@@ -327,24 +366,48 @@ private fun SubcategoriesTabSplit(repository: VendorRepository, categories: List
         if (isWide) {
             Row(Modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(Modifier.weight(1f).fillMaxHeight(), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))) {
-                    SubcategoryListContent(categories, selectedCatId, { selectedCatId = it; selectedSub = null; text = "" }, query, { query = it }, selectedSub, filtered, { selectedSub = it; text = it.name }, { selectedSub = null; text = "" })
+                    SubcategoryListContent(categories, selectedCatId, { selectedCatId = it; selectedSub = null; text = ""; isAddingNew = false }, query, { query = it }, selectedSub, filtered, { selectedSub = it; text = it.name; isAddingNew = false }, { selectedSub = null; text = ""; isAddingNew = true })
                 }
                 Card(Modifier.weight(1.5f).fillMaxHeight(), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0))) {
-                    SubcategoryFormContent(selectedSub, text, { text = it }, selectedCatId, isSaving,
-                        onSave = { scope.launch { isSaving = true; try { val err = if (selectedSub == null) repository.addSubcategory(selectedCatId!!, text) else repository.updateSubcategory(selectedSub!!.id, text); if (err != null) showSnack(err) else { text = ""; selectedSub = null; onReload(); showSnack("Saved!") } } finally { isSaving = false } } },
-                        onDelete = { scope.launch { isSaving = true; try { val sub = selectedSub!!; if (products.any { it.subcategoryId == sub.id }) showSnack("Cannot delete! Products exist here.") else { repository.deleteSubcategory(sub.id); text = ""; selectedSub = null; onReload(); showSnack("Deleted") } } finally { isSaving = false } } }
-                    )
+                    if (selectedSub == null && !isAddingNew) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Select a subcategory or add a new one.", color = Color.Gray, fontSize = 15.sp) }
+                    } else {
+                        SubcategoryFormContent(selectedSub, text, { text = it }, selectedCatId, isSaving,
+                            onSave = { scope.launch {
+                                isSaving = true
+                                val err = if (selectedSub == null) repository.addSubcategory(selectedCatId!!, text) else repository.updateSubcategory(selectedSub!!.id, text)
+                                isSaving = false
+                                if (err != null) showSnack(err) else { text = ""; selectedSub = null; isAddingNew = false; onReload(); showSnack("Saved!") }
+                            } },
+                            onDelete = { scope.launch {
+                                isSaving = true
+                                val sub = selectedSub!!
+                                if (products.any { it.subcategoryId == sub.id }) { isSaving = false; showSnack("Cannot delete! Products exist here.") }
+                                else { repository.deleteSubcategory(sub.id); isSaving = false; text = ""; selectedSub = null; isAddingNew = false; onReload(); showSnack("Deleted") }
+                            } }
+                        )
+                    }
                 }
             }
         } else {
-            if (selectedSub == null) {
-                SubcategoryListContent(categories, selectedCatId, { selectedCatId = it; selectedSub = null; text = "" }, query, { query = it }, selectedSub, filtered, { selectedSub = it; text = it.name }, { selectedSub = null; text = "" })
+            if (selectedSub == null && !isAddingNew) {
+                SubcategoryListContent(categories, selectedCatId, { selectedCatId = it; selectedSub = null; text = ""; isAddingNew = false }, query, { query = it }, selectedSub, filtered, { selectedSub = it; text = it.name }, { selectedSub = null; text = ""; isAddingNew = true })
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    IconButton(onClick = { selectedSub = null; text = "" }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50)) }
+                    IconButton(onClick = { selectedSub = null; isAddingNew = false; text = "" }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFF2C3E50)) }
                     SubcategoryFormContent(selectedSub, text, { text = it }, selectedCatId, isSaving,
-                        onSave = { scope.launch { isSaving = true; try { val err = repository.updateSubcategory(selectedSub!!.id, text); if (err != null) showSnack(err) else { text = ""; selectedSub = null; onReload(); showSnack("Saved!") } } finally { isSaving = false } } },
-                        onDelete = { scope.launch { isSaving = true; try { val sub = selectedSub!!; if (products.any { it.subcategoryId == sub.id }) showSnack("Cannot delete! Products exist here.") else { repository.deleteSubcategory(sub.id); text = ""; selectedSub = null; onReload(); showSnack("Deleted") } } finally { isSaving = false } } }
+                        onSave = { scope.launch {
+                            isSaving = true
+                            val err = if (selectedSub == null) repository.addSubcategory(selectedCatId!!, text) else repository.updateSubcategory(selectedSub!!.id, text)
+                            isSaving = false
+                            if (err != null) showSnack(err) else { text = ""; selectedSub = null; isAddingNew = false; onReload(); showSnack("Saved!") }
+                        } },
+                        onDelete = { scope.launch {
+                            isSaving = true
+                            val sub = selectedSub!!
+                            if (products.any { it.subcategoryId == sub.id }) { isSaving = false; showSnack("Cannot delete! Products exist here.") }
+                            else { repository.deleteSubcategory(sub.id); isSaving = false; text = ""; selectedSub = null; isAddingNew = false; onReload(); showSnack("Deleted") }
+                        } }
                     )
                 }
             }

@@ -23,7 +23,7 @@ class AndroidPdfPrinter(private val activity: Activity) : PdfPrinter {
     override suspend fun print(title: String, rows: List<PdfRow>): Boolean {
         val bytes = withContext(Dispatchers.Default) { renderPdf(rows) }
         withContext(Dispatchers.Main) { startPrintJob(title, bytes) }
-        return true   // Android me system dialog khulta hai, cancel pata nahi chalta
+        return true
     }
 
     private fun startPrintJob(title: String, bytes: ByteArray) {
@@ -66,7 +66,6 @@ class AndroidPdfPrinter(private val activity: Activity) : PdfPrinter {
         printManager.print(title, adapter, null)
     }
 
-    /** PdfRow ki list ko A4 PDF me draw karta hai (zarurat ho to naya page). */
     private fun renderPdf(rows: List<PdfRow>): ByteArray {
         val pageW = PdfLayout.PAGE_WIDTH.toInt()
         val pageH = PdfLayout.PAGE_HEIGHT.toInt()
@@ -105,7 +104,12 @@ class AndroidPdfPrinter(private val activity: Activity) : PdfPrinter {
                     val baseline = y + size
 
                     paint.textAlign = Paint.Align.LEFT
-                    if (row.left.isNotEmpty()) canvas.drawText(row.left, margin, baseline, paint)
+
+                    // NAYA FIX: Left text ko limit me rakhein
+                    val maxLeftWidth = PdfLayout.QTY_X - margin - 10f
+                    val safeLeftText = fitText(row.left, paint, maxLeftWidth)
+
+                    if (safeLeftText.isNotEmpty()) canvas.drawText(safeLeftText, margin, baseline, paint)
                     if (row.qty.isNotEmpty()) canvas.drawText(row.qty, PdfLayout.QTY_X, baseline, paint)
                     if (row.rate.isNotEmpty()) canvas.drawText(row.rate, PdfLayout.RATE_X, baseline, paint)
 
@@ -122,5 +126,15 @@ class AndroidPdfPrinter(private val activity: Activity) : PdfPrinter {
         doc.writeTo(out)
         doc.close()
         return out.toByteArray()
+    }
+
+    // NAYA FIX: Text ko cut karne ka function Android ke liye
+    private fun fitText(text: String, paint: Paint, maxWidth: Float): String {
+        if (paint.measureText(text) <= maxWidth) return text
+        var end = text.length
+        while (end > 0 && paint.measureText(text.substring(0, end) + "...") > maxWidth) {
+            end--
+        }
+        return text.substring(0, end) + "..."
     }
 }
