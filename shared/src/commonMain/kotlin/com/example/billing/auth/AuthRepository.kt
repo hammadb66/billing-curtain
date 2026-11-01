@@ -21,7 +21,7 @@ class AuthRepository(database: BillingDatabase, private val settings: AppSetting
 
     private fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
 
-    suspend fun login(username: String, password: String): LoginResult = withContext(Dispatchers.Default) {
+    suspend fun login(username: String, password: String): LoginResult = withContext(Dispatchers.IO) {
         val name = username.trim().lowercase()
         val now = nowMillis()
 
@@ -60,7 +60,7 @@ class AuthRepository(database: BillingDatabase, private val settings: AppSetting
     }
 
     /** null = kamyab, warna error ka text */
-    suspend fun addUser(username: String, password: String): String? = withContext(Dispatchers.Default) {
+    suspend fun addUser(username: String, password: String): String? = withContext(Dispatchers.IO) {
         val name = username.trim().lowercase()
         val problem = checkName(name) ?: checkPassword(password)
         if (problem != null) return@withContext problem

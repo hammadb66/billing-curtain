@@ -21,7 +21,7 @@ class AppServices(
     val firebase: FirebaseApi,
     val sync: SyncManager,
     val vendors: VendorRepository,
-    val backup: BackupRepository   // ← NEW
+    val backup: BackupRepository
 )
 
 fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): AppServices {
@@ -32,13 +32,21 @@ fun createAppServices(driverFactory: DriverFactory, device: DeviceIdentity): App
     val license = LicenseManager(settings, firebase, device)
     val vendors = VendorRepository(database, bills)
     val backup = BackupRepository(bills, vendors)
+    val syncManager = SyncManager(
+        settings = settings,
+        repo = bills,
+        vendors = vendors,
+        backupRepo = backup,
+        api = BillCloudApi(CloudAuth(license.deviceId), license.deviceId),
+        deviceId = license.deviceId,
+    )
     return AppServices(
         bills = bills,
         auth = AuthRepository(database, settings),
         settings = settings,
         license = license,
         firebase = firebase,
-        sync = SyncManager(settings, bills, BillCloudApi(CloudAuth(license.deviceId), license.deviceId), license.deviceId),
+        sync = syncManager,
         vendors = vendors,
         backup = backup
     )

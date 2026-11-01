@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.billing.model.Product
 import com.example.billing.utils.formatMoney
+import com.example.billing.utils.formatQty
 import com.example.billing.utils.sanitizeDecimal
 
 internal val DiscountColor = Color(0xFFD32F2F)
@@ -136,6 +137,9 @@ fun ItemEntryCard(
     name: String,
     occurrence: Int,
     qty: String,
+    discount: String,
+    discountIsPercent: Boolean, // <-- NAYA parameter add karein
+    onDiscountChange: (String) -> Unit,
     onQtyChange: (String) -> Unit,
     rate: String,
     onRateChange: (String) -> Unit,
@@ -147,7 +151,10 @@ fun ItemEntryCard(
     productName: String = "",
     categoryName: String = "",
     subcategoryName: String = "",
+    groupName: String = "",
+    subgroupName: String = "",
     stock: Double = 0.0,
+    productDiscountPct: Double = 0.0,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -160,7 +167,7 @@ fun ItemEntryCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
-            // ========== TOP ROW: Naam + Same Item + Delete ==========
+            // TOP ROW
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (occurrence > 1) "$name ($occurrence)" else name,
@@ -170,23 +177,17 @@ fun ItemEntryCard(
                     color = Color(0xFF1E293B),
                     maxLines = 2,
                 )
-
-                TextButton(
-                    onClick = onDuplicate,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.height(30.dp),
-                ) {
+                TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(30.dp)) {
                     Icon(Icons.Default.Add, null, tint = AppGreen, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(2.dp))
                     Text("Same", fontSize = 11.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                 }
-
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Delete, null, tint = Color.Red, modifier = Modifier.size(16.dp))
                 }
             }
 
-            // ========== MIDDLE ROW: Dropdown aur Stock ==========
+            // MIDDLE ROW (Dropdown aur Stock)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,6 +202,8 @@ fun ItemEntryCard(
                             "product" -> "Show: Product"
                             "category" -> "Show: Category"
                             "subcategory" -> "Show: Subcategory"
+                            "group" -> "Show: Group"
+                            "subgroup" -> "Show: Subgroup"
                             else -> "Show: Default"
                         }
                         Text(displayLabel, fontSize = 11.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
@@ -212,6 +215,8 @@ fun ItemEntryCard(
                             "product" to "Product: ${productName.ifBlank { "—" }}",
                             "category" to "Category: ${categoryName.ifBlank { "—" }}",
                             "subcategory" to "Subcategory: ${subcategoryName.ifBlank { "—" }}",
+                            "group" to "Group: ${groupName.ifBlank { "—" }}",
+                            "subgroup" to "Subgroup: ${subgroupName.ifBlank { "—" }}"
                         ).forEach { (key, label) ->
                             DropdownMenuItem(
                                 text = { Text(label, fontSize = 13.sp) },
@@ -221,17 +226,28 @@ fun ItemEntryCard(
                     }
                 }
 
-                Text(
-                    "Stock: ${formatMoney(stock)} $unit",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (stock > 0) AppGreen else Color.Red
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (productDiscountPct > 0.0) {
+                        Text(
+                            "(${formatQty(productDiscountPct)}% off)",
+                            fontSize = 11.sp,
+                            color = Color(0xFFE65100),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                    Text(
+                        "Stock: ${formatMoney(stock)} $unit",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (stock > 0) AppGreen else Color.Red
+                    )
+                }
             }
 
             Spacer(Modifier.height(6.dp))
 
-            // ========== BOTTOM ROW: Qty | Rate | Total ==========
+            // BOTTOM ROW (Qty | Rate | Disc | Total)
             Row(
                 Modifier.padding(end = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -245,10 +261,21 @@ fun ItemEntryCard(
                     Text("Rate", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     CompactNumberField(rate, onRateChange, Modifier.fillMaxWidth())
                 }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                Column(Modifier.weight(0.8f)) {
+                    Text("Disc", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    CompactNumberField(discount, onDiscountChange, Modifier.fillMaxWidth())
+                }
+                Column(Modifier.weight(1.2f), horizontalAlignment = Alignment.End) {
                     Text("Total", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    // NAYA CALCULATION
+                    val totalValue = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
+                    val prodDisc = totalValue * (productDiscountPct / 100.0)
+                    val netValue = totalValue - prodDisc
+                    val discValue = discount.toDoubleOrNull() ?: 0.0
+                    val finalTotal = if (discountIsPercent) (netValue * (1.0 - discValue / 100.0)) else (netValue - discValue)
+
                     Text(
-                        "Rs ${formatMoney(total)}",
+                        "Rs ${formatMoney(finalTotal.coerceAtLeast(0.0))}",
                         fontSize = 15.sp, fontWeight = FontWeight.Bold,
                         color = AppGreen, textAlign = TextAlign.End,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -305,6 +332,11 @@ fun AddItemDialog(
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text("Rs ${formatMoney(p.salePrice)}", fontSize = 13.sp, color = AppGreen, fontWeight = FontWeight.Bold)
+
+                                    if (p.discountPct > 0.0) {
+                                        Text("(${formatQty(p.discountPct)}% off)", fontSize = 11.sp, color = Color(0xFFE65100), fontWeight = FontWeight.Bold)
+                                    }
+
                                     Text(
                                         "Stock: ${formatMoney(p.liveStock ?: p.openingStock)} ${p.unit}",
                                         fontSize = 10.sp,

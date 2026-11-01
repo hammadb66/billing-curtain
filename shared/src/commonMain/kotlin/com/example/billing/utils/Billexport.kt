@@ -1,25 +1,31 @@
 package com.example.billing.utils
 
 import com.example.billing.model.Bill
-import com.example.billing.model.RoomData
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-/** Poore backup ke liye ek bill ki shakal (JSON me save hoti hai). */
-@Serializable
-data class BillBackup(
-    val id: Long, val customer: String, val phone: String,
-    val address: String = "", val phone2: String = "", val accountNo: String = "", // NAYA
-    val date: String, val rooms: List<RoomData>, val discount: Double, val extraCharges: Double,
-    val paidAmount: Double? = null, val invoiceLabel: String = "",
-    val showProduct: Boolean = false, val showCategory: Boolean = false, val showSubcategory: Boolean = false,
-    val salesmanId: Long? = null
-)
-
 fun billsToBackupJson(bills: List<Bill>): String =
     backupJson.encodeToString(ListSerializer(BillBackup.serializer()), bills.map {
-        BillBackup(it.id, it.customer, it.phone, it.address, it.phone2, it.accountNo, it.date, it.rooms, it.discount, it.extraCharges, it.paidAmount, it.invoiceLabel, it.showProduct, it.showCategory, it.showSubcategory, it.salesmanId)
+        BillBackup(
+            id = it.id,
+            customer = it.customer,
+            phone = it.phone,
+            address = it.address,
+            phone2 = it.phone2,
+            accountNo = it.accountNo,
+            date = it.date,
+            rooms = it.rooms,
+            discount = it.discount,
+            extraCharges = it.extraCharges,
+            paidAmount = it.paidAmount,
+            invoiceLabel = it.invoiceLabel,
+            showProduct = it.showProduct,
+            showCategory = it.showCategory,
+            showSubcategory = it.showSubcategory,
+            showGroup = it.showGroup,        // <-- ADD
+            showSubgroup = it.showSubgroup,  // <-- ADD
+            salesmanId = it.salesmanId,
+        )
     })
 
 private val backupJson = Json { prettyPrint = true; encodeDefaults = true }

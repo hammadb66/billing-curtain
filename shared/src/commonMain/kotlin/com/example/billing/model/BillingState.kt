@@ -13,6 +13,8 @@ private fun nextId(): Long = idCounter++
 class ItemState(val name: String, var unit: String = "") {
     var qty by mutableStateOf("")
     var rate by mutableStateOf("")
+    var discount by mutableStateOf("")   // <-- NEW: per-item discount (amount or %)
+    var discountIsPercent by mutableStateOf(false) // optional: toggle %/Rs
     var stock: Double = 0.0
     var productId: Long? = null
     var productName by mutableStateOf("")
@@ -20,21 +22,41 @@ class ItemState(val name: String, var unit: String = "") {
     var subcategoryName by mutableStateOf("")
     var displayType by mutableStateOf("default")
 
-    val total: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
+    val grossTotal: Double get() = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
+    // NAYA: Product ka discount amount nikaalo
+    val productDiscountAmount: Double get() = grossTotal * (productDiscountPct / 100.0)
+    val netGross: Double get() = grossTotal - productDiscountAmount
+    val total: Double
+        get() {
+            val d = discount.toDoubleOrNull() ?: 0.0
+            // NAYA: Pehle product ka discount minus karo, phir manual discount lagao
+            return if (discountIsPercent) (netGross * (1.0 - d / 100.0)).coerceAtLeast(0.0)
+            else (netGross - d).coerceAtLeast(0.0)
+        }
     val isIncomplete: Boolean get() = (qty.isNotBlank() || rate.isNotBlank()) && total <= 0.0
 
-    fun displayName(showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean): String =
-        when (displayType) {
-            "product" -> productName.ifBlank { name }
-            "category" -> categoryName.ifBlank { name }
-            "subcategory" -> subcategoryName.ifBlank { name }
-            else -> when {
-                showProduct && productName.isNotBlank() -> productName
-                showCategory && categoryName.isNotBlank() -> categoryName
-                showSubcategory && subcategoryName.isNotBlank() -> subcategoryName
-                else -> name
-            }
+    var groupName by mutableStateOf("")
+    var subgroupName by mutableStateOf("")
+    var productDiscountPct by mutableStateOf(0.0)
+
+
+    fun displayName(
+        showProduct: Boolean, showCategory: Boolean, showSubcategory: Boolean, showGroup: Boolean, showSubgroup: Boolean
+    ): String = when (displayType) {
+        "product" -> productName.ifBlank { name }
+        "category" -> categoryName.ifBlank { name }
+        "subcategory" -> subcategoryName.ifBlank { name }
+        "group" -> groupName.ifBlank { name }        // NAYA
+        "subgroup" -> subgroupName.ifBlank { name }  // NAYA
+        else -> when {
+            showProduct && productName.isNotBlank() -> productName
+            showCategory && categoryName.isNotBlank() -> categoryName
+            showSubcategory && subcategoryName.isNotBlank() -> subcategoryName
+            showGroup && groupName.isNotBlank() -> groupName           // NAYA
+            showSubgroup && subgroupName.isNotBlank() -> subgroupName  // NAYA
+            else -> name
         }
+    }
 }
 
 class RoomState {
@@ -51,8 +73,10 @@ class RoomState {
         item.categoryName = product.categoryName
         item.subcategoryName = product.subcategoryName
         item.stock = stock
-        // Auto-fill Sale Price into Rate
         item.rate = product.salePrice.toInputString()
+        item.groupName = product.groupName
+        item.subgroupName = product.subgroupName
+        item.productDiscountPct = product.discountPct
         items.add(item)
     }
 
@@ -64,24 +88,39 @@ class RoomState {
             categoryName = item.categoryName
             subcategoryName = item.subcategoryName
             displayType = item.displayType
-            rate = item.rate // Duplicate rate as well
+            rate = item.rate
+            groupName = item.groupName
+            subgroupName = item.subgroupName
+            discount = item.discount
+            discountIsPercent = item.discountIsPercent
+            productDiscountPct = item.productDiscountPct
         }
         if (i >= 0) items.add(i + 1, copy) else items.add(copy)
     }
 
-    fun removeItem(item: ItemState) { items.remove(item) }
+    fun removeItem(item: ItemState) {
+        items.remove(item)
+    }
 
-    fun toRoomData() = RoomData(
-        roomName = name.trim(),
-        items = items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }.map {
+    fun toRoomData() =
+        RoomData(roomName = name.trim(), items = items.filter { it.qty.isNotBlank() || it.rate.isNotBlank() }.map {
             ItemData(
-                name = it.name, qty = it.qty, rate = it.rate, unit = it.unit,
-                productId = it.productId, productName = it.productName,
-                categoryName = it.categoryName, subcategoryName = it.subcategoryName,
+                name = it.name,
+                qty = it.qty,
+                rate = it.rate,
+                unit = it.unit,
+                productId = it.productId,
+                productName = it.productName,
+                categoryName = it.categoryName,
+                subcategoryName = it.subcategoryName,
+                groupName = it.groupName,
+                subgroupName = it.subgroupName,
                 displayType = it.displayType,
+                discount = it.discount,
+                discountIsPercent = it.discountIsPercent,
+                productDiscountPct = it.productDiscountPct
             )
-        }
-    )
+        })
 }
 
 class BillingFormState {
@@ -94,14 +133,15 @@ class BillingFormState {
     var showProduct by mutableStateOf(true)
     var showCategory by mutableStateOf(false)
     var showSubcategory by mutableStateOf(false)
+    var showGroup by mutableStateOf(false)
+    var showSubgroup by mutableStateOf(false)
     var discountIsPercent by mutableStateOf(false)
     var extraCharges by mutableStateOf("")
     var received by mutableStateOf("")
     val rooms = mutableStateListOf(RoomState())
 
-    // NAYA: Customer ID Selector & Print Toggle
     var selectedCustomerAccount by mutableStateOf<CustomerAccount?>(null)
-    var shouldPrint by mutableStateOf(true) // Print toggle state
+    var shouldPrint by mutableStateOf(true)
 
     val subtotal: Double get() = rooms.sumOf { it.total }
     val discountValue: Double get() = resolveDiscount(subtotal, discount, discountIsPercent)
@@ -111,9 +151,23 @@ class BillingFormState {
     val balance: Double get() = (grandTotal - receivedValue).coerceAtLeast(0.0)
     val hasAnyItem: Boolean get() = rooms.any { r -> r.items.any { it.total > 0.0 } }
     val hasIncompleteItem: Boolean get() = rooms.any { r -> r.items.any { it.isIncomplete } }
+    var previousBill by mutableStateOf<Bill?>(null)
+    var previousBalance by mutableStateOf(0.0)
+    var totalWithPrevious by mutableStateOf(0.0)
 
-    fun addRoom() { rooms.add(RoomState()) }
-    fun removeRoom(room: RoomState) { if (rooms.isNotEmpty() && rooms.first() !== room) rooms.remove(room) }
+    fun loadPreviousBill(bill: Bill?) {
+        previousBill = bill
+        previousBalance = bill?.balance ?: 0.0
+        totalWithPrevious = grandTotal + previousBalance
+    }
+
+    fun addRoom() {
+        rooms.add(RoomState())
+    }
+
+    fun removeRoom(room: RoomState) {
+        if (rooms.isNotEmpty() && rooms.first() !== room) rooms.remove(room)
+    }
 
     fun reset() {
         customer = ""
@@ -126,7 +180,9 @@ class BillingFormState {
         extraCharges = ""
         received = ""
         selectedCustomerAccount = null
-        // shouldPrint remains as is (preserves user preference)
+        previousBill = null
+        previousBalance = 0.0
+        totalWithPrevious = 0.0
         rooms.clear()
         rooms.add(RoomState())
     }

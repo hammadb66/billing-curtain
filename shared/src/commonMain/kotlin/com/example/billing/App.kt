@@ -34,17 +34,18 @@ import com.example.billing.ui.AppTheme
 import com.example.billing.ui.BillingScreen
 import com.example.billing.ui.BlockedScreen
 import com.example.billing.ui.CheckingScreen
+import com.example.billing.ui.CustomerDetailScreen
 import com.example.billing.ui.EditBillScreen
 import com.example.billing.ui.FileImporter
 import com.example.billing.ui.HistoryScreen
 import com.example.billing.ui.LoginScreen
 import com.example.billing.ui.ManageItemsScreen
+import com.example.billing.ui.PartyListScreen
 import com.example.billing.ui.ProductListScreen
 import com.example.billing.ui.PurchaseEditScreen
 import com.example.billing.ui.PurchaseListScreen
 import com.example.billing.ui.ReportScreen
 import com.example.billing.ui.VendorDetailScreen
-import com.example.billing.ui.VendorListScreen
 import com.example.billing.utils.Branding
 import com.example.billing.utils.FileExporter
 import kotlinx.coroutines.delay
@@ -161,14 +162,7 @@ fun App(
 
                     is Gate.LoggedIn -> {
                         NavHost(navController = navController, startDestination = BillingRoute.Billing) {
-                            composable<BillingRoute.Vendors> {
-                                VendorListScreen(
-                                    repository = services.vendors,
-                                    onBack = { navController.popBackStack() },
-                                    onOpenVendor = { id -> navController.navigate(BillingRoute.VendorDetail(id)) },
-                                    onAddVendor = { /* handled in screen via dialog */ },
-                                )
-                            }
+
                             composable<BillingRoute.VendorDetail> { entry ->
                                 val route = entry.toRoute<BillingRoute.VendorDetail>()
                                 VendorDetailScreen(
@@ -210,7 +204,7 @@ fun App(
                                     },
                                     onOpenManageItems = { navController.navigate(BillingRoute.Products) },   // ← Ab Products khulega
                                     onOpenItemReport = { navController.navigate(BillingRoute.ItemReport) },
-                                    onOpenVendors = { navController.navigate(BillingRoute.Vendors) },       // ← NAYA
+                                    onOpenVendors = { navController.navigate(BillingRoute.PartyList) },     // ← NAYA
                                     onOpenPurchases = { navController.navigate(BillingRoute.Purchases) },   // ← NAYA                                    onOpenItemReport = { navController.navigate(BillingRoute.ItemReport) },
                                     userName = g.user.username,
                                     isDeveloper = g.dev != null,
@@ -218,7 +212,22 @@ fun App(
                                     importer = importer    // <-- NAYA
                                 )
                             }
+                            composable<BillingRoute.PartyList> {
+                                PartyListScreen(
+                                    repository = services.vendors,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenParty = { id, type -> navController.navigate(BillingRoute.PartyDetail(id, type)) }
+                                )
+                            }
 
+                            composable<BillingRoute.PartyDetail> { entry ->
+                                val route = entry.toRoute<BillingRoute.PartyDetail>()
+                                if (route.type == "vendor") {
+                                    VendorDetailScreen(services.vendors, route.id, { navController.popBackStack() }, printer)
+                                } else {
+                                    CustomerDetailScreen(services.vendors, route.id, { navController.popBackStack() }, printer)
+                                }
+                            }
                             composable<BillingRoute.History> {
                                 HistoryScreen(
                                     repository = services.bills,

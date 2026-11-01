@@ -379,6 +379,8 @@ fun HistoryScreen(
                                                             rooms = bill.rooms, discount = bill.discount, extraCharges = bill.extraCharges,
                                                             invoiceNo = bill.invoiceText, paidAmount = bill.paidAmount,
                                                             showProduct = bill.showProduct, showCategory = bill.showCategory, showSubcategory = bill.showSubcategory,
+                                                            showGroup = bill.showGroup,      // <-- NAYA
+                                                            showSubgroup = bill.showSubgroup // <-- NAYA
                                                         ),
                                                     )
                                                 } catch (e: Throwable) {
@@ -531,8 +533,12 @@ private fun ModernBillCard(
     onWhatsApp: () -> Unit,
     onReceive: () -> Unit,
 ) {
-    val pending = bill.balance > 0.005
-    val statusColor = if (pending) DueColor else PaidColor
+    val pending = bill.isUnknown || bill.balance > 0.005
+    val statusColor = when {
+        bill.isUnknown -> Color.Gray
+        pending        -> DueColor
+        else           -> PaidColor
+    }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -568,7 +574,9 @@ private fun ModernBillCard(
                         }
                         Column(Modifier.weight(1.5f), horizontalAlignment = Alignment.Start) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (pending) AmountTag("Pending", DueColor) else AmountTag("PAID", PaidColor)
+                                if (bill.isUnknown) AmountTag("—", Color.Gray)
+                                else if (pending) AmountTag("Pending", DueColor)
+                                else AmountTag("PAID", PaidColor)
                             }
                         }
                         Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
@@ -603,7 +611,9 @@ private fun ModernBillCard(
                                 Text(displayDate(bill.date), fontSize = 11.sp, color = Color.Gray)
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (pending) AmountTag("Pending", DueColor) else AmountTag("PAID", PaidColor)
+                                if (bill.isUnknown) AmountTag("—", Color.Gray)
+                                else if (pending) AmountTag("Pending", DueColor)
+                                else AmountTag("PAID", PaidColor)
                             }
                         }
                     }
@@ -615,11 +625,10 @@ private fun ModernBillCard(
                 HorizontalDivider(color = Color(0xFFF1F5F9))
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     bill.rooms.forEach { room ->
-                        RoomTableCard(room, bill.showProduct, bill.showCategory, bill.showSubcategory)
+                        RoomTableCard(room, bill.showProduct, bill.showCategory, bill.showSubcategory,bill.showGroup,bill.showSubgroup)
                     }
                     Column(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC), RoundedCornerShape(6.dp)).padding(16.dp)) {
-                        AmountBreakdown(bill.subtotal, bill.discount, bill.extraCharges, grandTotal = bill.grandTotal, received = bill.paidAmount)
-                    }
+                        AmountBreakdown(bill.subtotal, bill.discount, bill.extraCharges, grandTotal = bill.grandTotal, received = bill.received)                    }
                 }
                 HorizontalDivider(color = Color(0xFFF1F5F9))
                 Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -640,6 +649,8 @@ private fun RoomTableCard(
     showProduct: Boolean,
     showCategory: Boolean,
     showSubcategory: Boolean,
+    showGroup:Boolean,
+    showSubGroup:Boolean
 ) {
     val items = room.validItems
     if (items.isEmpty()) return
@@ -666,7 +677,7 @@ private fun RoomTableCard(
 
         items.forEach { item ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Text(item.displayName(showProduct, showCategory, showSubcategory), Modifier.weight(3.5f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(item.displayName(showProduct, showCategory, showSubcategory,showGroup,showSubGroup), Modifier.weight(3.5f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 Text(formatQty(item.qtyValue), Modifier.weight(1.5f), fontSize = 13.sp, textAlign = TextAlign.Center, color = Color.DarkGray)
                 Text(formatMoney(item.rateValue), Modifier.weight(2f), fontSize = 13.sp, textAlign = TextAlign.End, color = Color.DarkGray)
                 Text(formatMoney(item.total), Modifier.weight(2.5f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), textAlign = TextAlign.End)

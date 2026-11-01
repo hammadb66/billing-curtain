@@ -29,25 +29,6 @@ data class VendorPayment(
     val totalCovered: Double get() = amount + discount
 }
 
-// ============ CATEGORY / SUBCATEGORY ============
-data class Category(val id: Long, val name: String)
-data class Subcategory(val id: Long, val categoryId: Long, val name: String)
-
-// ============ PRODUCT ============
-data class Product(
-    val id: Long,
-    val name: String,
-    val categoryId: Long? = null,
-    val categoryName: String = "",
-    val subcategoryId: Long? = null,
-    val subcategoryName: String = "",
-    val price: Double = 0.0,
-    val salePrice: Double = 0.0,
-    val openingStock: Double = 0.0,
-    val unit: String = "pcs",
-    val liveStock: Double? = null,
-    )
-
 // ============ PURCHASE ============
 @Serializable
 data class PurchaseItem(

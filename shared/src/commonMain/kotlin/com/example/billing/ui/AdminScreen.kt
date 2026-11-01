@@ -276,9 +276,7 @@ fun AdminScreen(
                 val problem = services.license.activate(v[0])
                 if (problem == null) {
                     loadThisShop()
-                    if (services.sync.handleShopChange()) {
-                        scope.launch { snackbar.showSnackbar("Shop code changed, online syncing disabled.") }
-                    }
+                    scope.launch { snackbar.showSnackbar("Shop code changed successfully.") }
                 }
                 problem
             },

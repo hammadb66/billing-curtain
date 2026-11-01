@@ -16,4 +16,8 @@ sealed interface BillingRoute {
     @Serializable data object Categories : BillingRoute
     @Serializable data object Purchases : BillingRoute
     @Serializable data class PurchaseEdit(val purchaseId: Long) : BillingRoute
+
+
+    @Serializable data object PartyList : BillingRoute
+    @Serializable data class PartyDetail(val id: Long, val type: String) : BillingRoute
 }

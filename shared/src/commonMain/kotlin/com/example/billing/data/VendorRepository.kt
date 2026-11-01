@@ -15,12 +15,15 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
 
     // ==================== VENDOR ====================
     suspend fun listVendors(): List<VendorWithBalance> = withContext(Dispatchers.Default) {
-        q.selectAllVendors { id, name, address, p1, p2, desc, created ->
-            Vendor(id, name, address, p1, p2, desc, created)
-        }.executeAsList().map { v ->
-            val bal = q.selectVendorBalance(v.id, v.id).executeAsOne()
-            VendorWithBalance(v, bal)
-        }
+        q.selectAllVendorsWithBalance { id, name, address, p1, p2, desc, created, balance ->
+            VendorWithBalance(
+                Vendor(id, name, address, p1, p2, desc, created),
+                balance
+            )
+        }.executeAsList()
+    }
+    suspend fun getVendorBalance(vendorId: Long): Double = withContext(Dispatchers.Default) {
+        q.selectVendorBalance(vendorId, vendorId).executeAsOne()
     }
 
     suspend fun getVendor(id: Long): Vendor? = withContext(Dispatchers.Default) {
@@ -41,12 +44,17 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         q.updateVendor(v.name.trim(), v.address.trim(), v.phone1.trim(), v.phone2.trim(), v.accountDescription.trim(), v.id)
     }
 
-    suspend fun deleteVendor(id: Long) = withContext(Dispatchers.Default) {
+    suspend fun deleteVendor(id: Long): Boolean = withContext(Dispatchers.Default) {
+        val hasPurchases = listPurchases(id).isNotEmpty()
+        val hasPayments = paymentsFor(id).isNotEmpty()
+        if (hasPurchases || hasPayments) return@withContext false // Delete nahi hone dein
+
         q.transaction {
             q.selectPaymentsForVendor(id) { pid, vid, amt, disc, date, note -> pid }.executeAsList().forEach { q.deleteVendorPayment(it) }
             q.selectPurchasesForVendor(id) { pid, vid, date, data, total, disc, paid, notes -> pid }.executeAsList().forEach { q.deletePurchase(it) }
             q.deleteVendor(id)
         }
+        true
     }
 
     // ==================== VENDOR PAYMENTS ====================
@@ -64,64 +72,94 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
     }
     suspend fun deletePayment(id: Long) = withContext(Dispatchers.Default) { q.deleteVendorPayment(id) }
 
-    // ==================== CATEGORIES ====================
-    suspend fun listCategories(): List<Category> = withContext(Dispatchers.Default) {
-        q.selectAllCategories { id, name -> Category(id, name) }.executeAsList()
+    // ==================== GROUP (5-level) ====================
+    suspend fun listGroups(): List<Group> = withContext(Dispatchers.Default) {
+        q.selectAllGroups { id, name -> Group(id, name) }.executeAsList()
+    }
+    suspend fun addGroup(name: String): Long = withContext(Dispatchers.Default) {
+        q.transactionWithResult { q.insertGroup(name.trim()); q.lastInsertedId().executeAsOne() }
+    }
+    suspend fun updateGroup(id: Long, name: String) = withContext(Dispatchers.Default) { q.updateGroup(name.trim(), id) }
+    suspend fun deleteGroup(id: Long) = withContext(Dispatchers.Default) { q.deleteGroup(id) }
+
+    // ==================== SUBGROUP ====================
+    suspend fun listSubgroups(groupId: Long? = null): List<Subgroup> = withContext(Dispatchers.Default) {
+        val rows = if (groupId == null) q.selectAllSubgroups { id, gid, n -> Triple(id, gid, n) }.executeAsList()
+        else q.selectSubgroupsForGroup(groupId) { id, gid, n -> Triple(id, gid, n) }.executeAsList()
+        rows.map { Subgroup(it.first, it.second, it.third) }
     }
 
-    suspend fun addCategory(name: String): String? = withContext(Dispatchers.Default) {
-        val clean = name.trim()
-        if (clean.isBlank()) return@withContext "Name is required."
-        if (q.selectCategoryByName(clean) { _, _ -> 1L }.executeAsOneOrNull() != null)
-            return@withContext "Category '$clean' already exists."
-        q.insertCategory(clean)
-        null
+    suspend fun addSubgroup(groupId: Long?, name: String): Long = withContext(Dispatchers.Default) {
+        q.transactionWithResult { q.insertSubgroup(groupId, name.trim()); q.lastInsertedId().executeAsOne() }
     }
+    suspend fun updateSubgroup(id: Long, name: String) = withContext(Dispatchers.Default) { q.updateSubgroup(name.trim(), id) }
+    suspend fun deleteSubgroup(id: Long) = withContext(Dispatchers.Default) { q.deleteSubgroup(id) }
 
-    suspend fun updateCategory(id: Long, name: String): String? = withContext(Dispatchers.Default) {
-        val clean = name.trim()
-        if (clean.isBlank()) return@withContext "Name is required."
-        val exists = q.selectCategoryByName(clean) { cid, _ -> cid }.executeAsOneOrNull()
-        if (exists != null && exists != id) return@withContext "Category '$clean' already exists."
-        q.updateCategory(clean, id)
-        null
+    // ==================== CATEGORY (subgroup-linked) ====================
+    suspend fun listCategories(subgroupId: Long? = null): List<Category> = withContext(Dispatchers.Default) {
+        val rows = if (subgroupId == null)
+            q.selectAllCategories { id, sgid, name -> Triple(id, sgid, name) }.executeAsList()
+        else
+            q.selectCategoriesForSubgroup(subgroupId) { id, sgid, name -> Triple(id, sgid, name) }.executeAsList()
+        rows.map { Category(it.first, it.third, it.second) }
     }
+    suspend fun addCategory(subgroupId: Long?, name: String): Long = withContext(Dispatchers.Default) {
+        q.transactionWithResult { q.insertCategory(subgroupId, name.trim()); q.lastInsertedId().executeAsOne() }
+    }
+    suspend fun updateCategory(id: Long, name: String) = withContext(Dispatchers.Default) { q.updateCategory(name.trim(), id) }
     suspend fun deleteCategory(id: Long) = withContext(Dispatchers.Default) { q.deleteCategory(id) }
 
-    // ==================== SUBCATEGORIES ====================
+    // ==================== SUBCATEGORY ====================
     suspend fun listSubcategories(categoryId: Long? = null): List<Subcategory> = withContext(Dispatchers.Default) {
         val rows = if (categoryId == null) q.selectAllSubcategories { id, cid, name -> Triple(id, cid, name) }.executeAsList()
         else q.selectSubcategoriesForCategory(categoryId) { id, cid, name -> Triple(id, cid, name) }.executeAsList()
         rows.map { Subcategory(it.first, it.second, it.third) }
     }
 
-    suspend fun addSubcategory(categoryId: Long, name: String): String? = withContext(Dispatchers.Default) {
+    // VendorRepository.kt
+
+    // NAYA FUNCTION: Specific Bill mein payment aur discount adjust karne ke liye
+    suspend fun payBill(billId: Long, additionalPaid: Double, additionalDiscount: Double) {
+        val bill = bills.getBill(billId) ?: return
+        val newPaid = (bill.paidAmount ?: 0.0) + additionalPaid
+        val newDiscount = bill.discount + additionalDiscount
+
+        // Bill update karein
+        bills.updateBill(
+            bill.id, bill.customer, bill.phone, bill.address, bill.phone2, bill.accountNo,
+            bill.rooms, newDiscount, bill.extraCharges, newPaid, bill.salesmanId,
+            bill.showProduct, bill.showCategory, bill.showSubcategory, bill.showGroup, bill.showSubgroup
+        )
+
+    }
+    suspend fun addSubcategory(categoryId: Long?, name: String): String? = withContext(Dispatchers.Default) {
+        //                                                    ↑ Long? (pehle Long)
         val clean = name.trim()
         if (clean.isBlank()) return@withContext "Name is required."
-        if (q.selectSubcategoryByName(categoryId, clean) { _, _, _ -> 1L }.executeAsOneOrNull() != null)
-            return@withContext "Subcategory '$clean' already exists in this category."
+        // Kotlin-level duplicate check (null parent ke liye DB UNIQUE kaam nahi karta)
+        val dup = listSubcategories().any { it.categoryId == categoryId && it.name.equals(clean, true) }
+        if (dup) return@withContext "Subcategory '$clean' already exists."
         q.insertSubcategory(categoryId, clean)
         null
     }
-
-    suspend fun updateSubcategory(id: Long, name: String): String? = withContext(Dispatchers.Default) {
-        val clean = name.trim()
-        if (clean.isBlank()) return@withContext "Name is required."
-        q.updateSubcategory(clean, id)
-        null
-    }
+    suspend fun updateSubcategory(id: Long, name: String) = withContext(Dispatchers.Default) { q.updateSubcategory(name.trim(), id) }
     suspend fun deleteSubcategory(id: Long) = withContext(Dispatchers.Default) { q.deleteSubcategory(id) }
 
-    // ==================== PRODUCTS ====================
+    // ==================== PRODUCTS (5-level + discount) ====================
     suspend fun listProducts(): List<Product> = withContext(Dispatchers.Default) {
+        val groups = listGroups().associateBy { it.id }
+        val subgroups = listSubgroups().associateBy { it.id }
         val cats = listCategories().associateBy { it.id }
         val subs = listSubcategories().associateBy { it.id }
-        q.selectAllProducts { id, name, cid, sid, price, sp, stock, unit ->
+        q.selectAllProducts { id, name, gid, sgid, cid, sid, price, sp, disc, stock, unit ->
             Product(
                 id = id, name = name,
+                groupId = gid, groupName = groups[gid]?.name ?: "",
+                subgroupId = sgid, subgroupName = subgroups[sgid]?.name ?: "",
                 categoryId = cid, categoryName = cats[cid]?.name ?: "",
                 subcategoryId = sid, subcategoryName = subs[sid]?.name ?: "",
-                price = price, salePrice = sp, openingStock = stock, unit = unit,
+                price = price, salePrice = sp, discountPct = disc,
+                openingStock = stock, unit = unit,
             )
         }.executeAsList()
     }
@@ -132,10 +170,10 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         val existing = listProducts().any {
             it.name.equals(p.name.trim(), true) && it.categoryId == p.categoryId && it.subcategoryId == p.subcategoryId
         }
-        if (existing) return@withContext "Product '${p.name}' already exists in this Category/Subcategory."
-
+        if (existing) return@withContext "Product '${p.name}' already exists."
         q.transactionWithResult {
-            q.insertProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim())
+            q.insertProduct(p.name.trim(), p.groupId, p.subgroupId, p.categoryId, p.subcategoryId,
+                p.price, p.salePrice, p.discountPct, p.openingStock, p.unit.trim())
             q.lastInsertedId().executeAsOne()
         }
         null
@@ -145,9 +183,9 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         val existing = listProducts().any {
             it.name.equals(p.name.trim(), true) && it.categoryId == p.categoryId && it.subcategoryId == p.subcategoryId && it.id != p.id
         }
-        if (existing) return@withContext "Another product '${p.name}' already exists in this Category/Subcategory."
-
-        q.updateProduct(p.name.trim(), p.categoryId, p.subcategoryId, p.price, p.salePrice, p.openingStock, p.unit.trim(), p.id)
+        if (existing) return@withContext "Another product '${p.name}' already exists."
+        q.updateProduct(p.name.trim(), p.groupId, p.subgroupId, p.categoryId, p.subcategoryId,
+            p.price, p.salePrice, p.discountPct, p.openingStock, p.unit.trim(), p.id)
         null
     }
     suspend fun deleteProduct(id: Long) = withContext(Dispatchers.Default) { q.deleteProduct(id) }
@@ -182,21 +220,20 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
             }
         }
     }
-
     suspend fun deletePurchase(id: Long) = withContext(Dispatchers.Default) { q.deletePurchase(id) }
 
     suspend fun getProductStock(productId: Long): Double = withContext(Dispatchers.Default) {
         val product = getProduct(productId) ?: return@withContext 0.0
         var stock = product.openingStock
-        listPurchases().forEach { purchase -> purchase.items.forEach { item -> if (item.productId == productId) stock += item.qtyValue } }
-        return@withContext stock
+        listPurchases().forEach { p -> p.items.forEach { if (it.productId == productId) stock += it.qtyValue } }
+        stock
     }
 
     suspend fun getLiveStock(productId: Long): Double = withContext(Dispatchers.Default) {
         val product = getProduct(productId) ?: return@withContext 0.0
         var stock = product.openingStock
-        listPurchases().forEach { purchase -> purchase.items.forEach { item -> if (item.productId == productId) stock += item.qtyValue } }
-        bills.getAllBills().forEach { bill -> bill.rooms.forEach { room -> room.items.forEach { item -> if (item.productId == productId) stock -= item.qtyValue } } }
+        listPurchases().forEach { p -> p.items.forEach { if (it.productId == productId) stock += it.qtyValue } }
+        bills.getAllBills().forEach { b -> b.rooms.forEach { r -> r.items.forEach { if (it.productId == productId) stock -= it.qtyValue } } }
         stock
     }
 
@@ -215,25 +252,55 @@ class VendorRepository(database: BillingDatabase, private val bills: BillReposit
         bills.getAllBills().any { bill -> bill.rooms.any { room -> room.items.any { it.productId == productId } } }
     }
 
-    // ==================== CUSTOMER ACCOUNTS ====================
+    // ==================== CUSTOMERS ====================
     suspend fun listCustomerAccounts(): List<CustomerAccount> = withContext(Dispatchers.Default) {
         q.selectAllSalesmen { id, name, p1, p2, addr, acc -> CustomerAccount(id, name, p1, p2, addr, acc) }.executeAsList()
     }
-
     suspend fun addCustomerAccount(name: String, phone1: String, phone2: String, address: String, accountNo: String): Long = withContext(Dispatchers.Default) {
         q.transactionWithResult {
             q.insertSalesman(name.trim(), phone1.trim(), phone2.trim(), address.trim(), accountNo.trim())
             q.lastInsertedId().executeAsOne()
         }
     }
-
     suspend fun updateCustomerAccount(account: CustomerAccount) = withContext(Dispatchers.Default) {
         q.updateSalesman(account.name.trim(), account.phone1.trim(), account.phone2.trim(), account.address.trim(), account.accountNo.trim(), account.id)
     }
+    suspend fun deleteCustomerAccount(id: Long): Boolean = withContext(Dispatchers.Default) {
+        if (isCustomerAccountUsedInBills(id) || getCustomerPayments(id).isNotEmpty()) return@withContext false
 
-    suspend fun deleteCustomerAccount(id: Long) = withContext(Dispatchers.Default) { q.deleteSalesman(id) }
-
+        q.deleteSalesman(id)
+        true
+    }
     suspend fun isCustomerAccountUsedInBills(id: Long): Boolean = withContext(Dispatchers.Default) {
         bills.getAllBills().any { it.salesmanId == id }
+    }
+
+    // ==================== CUSTOMER PAYMENTS ====================
+    data class CustomerPayment(
+        val id: Long, val customerId: Long, val amount: Double,
+        val discount: Double, val date: String, val note: String
+    )
+
+    suspend fun addCustomerPayment(customerId: Long, amount: Double, discount: Double, date: String, note: String) = withContext(Dispatchers.Default) {
+        q.insertCustomerPayment(customerId, amount, discount, date, note)
+    }
+    suspend fun getCustomerPayments(customerId: Long): List<CustomerPayment> = withContext(Dispatchers.Default) {
+        q.selectCustomerPayments(customerId) { id, cid, amt, disc, date, note ->
+            CustomerPayment(id, cid, amt, disc, date, note)
+        }.executeAsList()
+    }
+    suspend fun updateCustomerPayment(p: CustomerPayment) = withContext(Dispatchers.Default) {
+        q.updateCustomerPayment(p.amount, p.discount, p.date, p.note, p.id)
+    }
+    suspend fun deleteCustomerPayment(id: Long) = withContext(Dispatchers.Default) { q.deleteCustomerPayment(id) }
+
+    suspend fun getCustomerBalance(customerId: Long): Double = withContext(Dispatchers.Default) {
+        val bills = bills.getAllBills().filter { it.salesmanId == customerId }
+        val totalPurchase = bills.sumOf { it.grandTotal }
+        val totalPaid = bills.sumOf { it.received } + getCustomerPayments(customerId).sumOf { it.amount + it.discount }
+        totalPurchase - totalPaid
+    }
+    suspend fun getCustomerPurchases(customerId: Long): List<Bill> = withContext(Dispatchers.Default) {
+        bills.getAllBills().filter { it.salesmanId == customerId }
     }
 }

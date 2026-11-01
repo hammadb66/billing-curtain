@@ -26,6 +26,8 @@ data class RemoteBill(
     val showProduct: Boolean = false,
     val showCategory: Boolean = false,
     val showSubcategory: Boolean = false,
+    val showGroup: Boolean = false,    // <-- NAYA
+    val showSubgroup: Boolean = false, // <-- NAYA
     val salesmanId: Long? = null,
 )
 
@@ -33,11 +35,11 @@ fun Bill.toRemote(updatedAt: Long, deviceId: String) = RemoteBill(
     invoiceNo = id, customer = customer, phone = phone, address = address, phone2 = phone2, accountNo = accountNo,
     date = date, rooms = rooms, discount = discount, extraCharges = extraCharges, paidAmount = paidAmount,
     updatedAt = updatedAt, deviceId = deviceId, invoiceLabel = invoiceLabel,
-    showProduct = showProduct, showCategory = showCategory, showSubcategory = showSubcategory, salesmanId = salesmanId,
+    showProduct = showProduct, showCategory = showCategory, showSubcategory = showSubcategory,  showGroup = showGroup, showSubgroup = showSubgroup, salesmanId = salesmanId,
 )
 
 fun RemoteBill.toBill() = Bill(
     id = invoiceNo, customer = customer, phone = phone, address = address, phone2 = phone2, accountNo = accountNo,
     date = date, rooms = rooms, discount = discount, extraCharges = extraCharges, paidAmount = paidAmount,
-    invoiceLabel = invoiceLabel, showProduct = showProduct, showCategory = showCategory, showSubcategory = showSubcategory, salesmanId = salesmanId,
+    invoiceLabel = invoiceLabel, showProduct = showProduct, showCategory = showCategory, showSubcategory = showSubcategory,  showGroup = showGroup, showSubgroup = showSubgroup, salesmanId = salesmanId,
 )

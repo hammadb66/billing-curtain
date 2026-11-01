@@ -20,7 +20,7 @@ private fun SyncStatus.label(): String = when (this) {
     SyncStatus.Disabled -> "Offline: Data is only on this laptop."
     SyncStatus.Syncing -> "Syncing..."
     SyncStatus.Synced -> "Online: Everything is synced with Firebase."
-    is SyncStatus.Waiting -> "Online: $pending change(s) pending ($reason)."
+    is SyncStatus.Waiting -> "Online: Waiting ($reason)."
 }
 
 private fun SyncStatus.color(): Color = when (this) {
@@ -50,18 +50,16 @@ fun SyncPanel(services: AppServices) {
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var forceOfflineReason by remember { mutableStateOf<String?>(null) }
-    var foreignShop by remember { mutableStateOf<String?>(null) }
     val notice by services.sync.notice.collectAsState()
 
     LaunchedEffect(status) { online = services.sync.isOnlineMode() }
 
-    fun enable(confirmForeign: Boolean) {
+    fun enable() {
         scope.launch {
             busy = true; message = null
-            when (val r = services.sync.enableOnline(confirmForeign)) {
+            when (val r = services.sync.enableOnline()) {
                 is EnableResult.Success -> message = r.note ?: "Went online. Data synced."
                 is EnableResult.Error -> message = r.message
-                is EnableResult.NeedsConfirm -> foreignShop = r.oldShop
             }
             online = services.sync.isOnlineMode(); busy = false
         }
@@ -69,7 +67,7 @@ fun SyncPanel(services: AppServices) {
 
     fun toggle(on: Boolean) {
         if (busy) return
-        if (on) { enable(confirmForeign = false); return }
+        if (on) { enable(); return }
         scope.launch {
             busy = true; message = null
             val err = services.sync.disableOnline()
@@ -111,27 +109,10 @@ fun SyncPanel(services: AppServices) {
                 ) { Text("Sync Now", color = Color(0xFF2C3E50)) }
             }
             Text(
-                "When TURNED ON: Old data from this laptop is sent to Firebase, and data from Firebase is brought here. Then, every new, edited, or deleted bill is saved online.",
+                "When TURNED ON: Old data from this laptop is sent to Firebase, and data from Firebase is brought here.",
                 fontSize = 12.sp, color = Color.Gray,
             )
         }
-    }
-
-    foreignShop?.let { old ->
-        AlertDialog(
-            onDismissRequest = { foreignShop = null },
-            title = { Text("Previous Shop Data", fontWeight = FontWeight.Bold) },
-            text = { Text("This laptop contains data for shop '$old', but the shop code is different now. Going online will move all these bills to the NEW shop.\n\nIf this data does not belong to the new shop, please click Cancel.") },
-            confirmButton = {
-                Button(
-                    onClick = { foreignShop = null; enable(confirmForeign = true) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                    shape = RoundedCornerShape(6.dp)
-                ) { Text("Yes, Send to New Shop", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { foreignShop = null }) { Text("Cancel") } },
-            shape = RoundedCornerShape(8.dp), containerColor = Color.White
-        )
     }
 
     forceOfflineReason?.let { reason ->

@@ -125,7 +125,35 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
 
     private fun readTs(body: String, key: String): Long =
         runCatching { json.parseToJsonElement(body).jsonObject[key]?.jsonPrimitive?.longOrNull }.getOrNull() ?: 0L
+    /** Saare reports ek saath Firebase pe bhejna (Requirement 5) */
+    suspend fun syncReports(shopId: String, reportsJson: String): String? {
+        return try {
+            val res = request("PUT", "reports/$shopId", body = reportsJson)
+            if (res.code == 200) null else "HTTP ${res.code}"
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { e.message ?: "network error" }
+    }
 
+    /** Firebase se reports lena */
+    suspend fun getReports(shopId: String): String? {
+        return try {
+            val res = request("GET", "reports/$shopId")
+            if (res.code == 200 && res.body.isNotBlank()) res.body else null
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    /** Is shop ka online data (Bills aur Master Data) delete karne ke liye. */
+    suspend fun deleteShopData(shopId: String): String? {
+        return try {
+            val res1 = request("DELETE", "reports/$shopId")   // <-- ADD: actual data
+            val res2 = request("DELETE", "bills/$shopId")     // purana, safety
+            val res3 = request("DELETE", "shopData/$shopId")
+            if (res1.code == 200 && res2.code == 200 && res3.code == 200) null
+            else "Failed (reports: ${res1.code}, bills: ${res2.code}, data: ${res3.code})"
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { e.message ?: "network error" }
+    }
     private companion object {
         /** Firebase ko kehna: yahan apna server waqt likh do. */
         val SERVER_TIME = buildJsonObject { put(".sv", "timestamp") }
