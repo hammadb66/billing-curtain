@@ -85,15 +85,32 @@ fun BillingScreen(
 
     val form = viewModel.form
     val previousBalance by viewModel.previousBalance.collectAsState()
+
+    // ============== YAHAN FIX KIYA GAYA HAI ==============
     LaunchedEffect(form.phone) {
         if (form.phone.isNotBlank()) {
+            // 1. Latest bill uthao sirf reference (Invoice #) ke liye
             val prevBill = services.bills.getPreviousBill(form.phone)
-            form.loadPreviousBill(prevBill)
+
+            // 2. Saare bills ka total pending balance nikaalo (e.g. 20+20=40)
+            val customerInfo = services.bills.getCustomerInfo(form.phone)
+            val totalPending = customerInfo?.previousBalance ?: 0.0
+
+            // 3. Form state update karo taake UI aur Print sahi amount dikhaye
+            form.previousBill = prevBill
+            form.previousBalance = totalPending
+            form.totalWithPrevious = form.grandTotal + totalPending
+
+            // 4. ViewModel state bhi update karo
+            viewModel.loadCustomerInfo(form.phone)
         } else {
             form.previousBill = null
             form.previousBalance = 0.0
+            form.totalWithPrevious = 0.0
+            viewModel.loadCustomerInfo("")
         }
     }
+    // =====================================================
 
     PlatformBackHandler { showExitConfirm = true }
 
@@ -927,7 +944,7 @@ private fun RightCheckoutPanel(
                     )
                     if (form.previousBalance > 0) {
                         Text(
-                            "Pending: Rs ${formatMoney(form.previousBalance)}",
+                            "Total Pending: Rs ${formatMoney(form.previousBalance)}",
                             fontSize = 12.sp,
                             color = Color(0xFFE65100)
                         )

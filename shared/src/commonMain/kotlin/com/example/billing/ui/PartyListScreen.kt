@@ -253,9 +253,9 @@ fun VendorEditDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Name *", fontSize = 12.sp) }, singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(address, { address = it }, label = { Text("Address", fontSize = 12.sp) }, singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(phone1, { phone1 = sanitizePhone(it) }, label = { Text("Phone 1", fontSize = 12.sp) }, singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(phone2, { phone2 = sanitizePhone(it) }, label = { Text("Phone 2", fontSize = 12.sp) }, singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(address, { address = it }, label = { Text("Address", fontSize = 12.sp) }, singleLine = true, enabled = !busy, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(desc, { desc = it }, label = { Text("Account / Description", fontSize = 12.sp) }, minLines = 2, enabled = !busy, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth())
                 error?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
             }

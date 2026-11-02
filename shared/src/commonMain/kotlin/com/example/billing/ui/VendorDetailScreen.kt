@@ -84,48 +84,45 @@ fun VendorDetailScreen(
                             rows += PdfRow(left = "Phone: ${vendor?.phone1}", fontSize = 12f)
                             if (vendor?.address?.isNotBlank() == true) rows += PdfRow(left = "Address: ${vendor?.address}", fontSize = 12f)
                             rows += PdfRow(kind = RowKind.SPACE)
-                            rows += PdfRow(right = "CURRENT BALANCE: Rs ${formatMoney(balance)}", bold = true, fontSize = 16f)
-                            rows += PdfRow(kind = RowKind.SPACE)
+
                             rows += PdfRow(left = "--- PURCHASES ---", bold = true, fontSize = 14f)
+                            var totalPurchases = 0.0
+                            var totalPaid = 0.0
                             if (purchases.isEmpty()) rows += PdfRow(left = "No purchases.", fontSize = 12f)
                             else purchases.forEach { pu ->
-                                rows += PdfRow(left = "Date: ${displayDate(pu.date)} | Items: ${pu.items.size}", right = "Total: Rs ${formatMoney(pu.total)}", fontSize = 12f)
-                                // NAYA: Discount line print karein
-                                if (pu.discount > 0.005) {
-                                    rows += PdfRow(left = "  Discount: - Rs ${formatMoney(pu.discount)}", right = "Payable: Rs ${formatMoney(pu.payable)}", fontSize = 11f)
-                                }
-                                rows += PdfRow(left = "  Paid: Rs ${formatMoney(pu.paid)}", right = "Bal: Rs ${formatMoney(pu.balance)}", fontSize = 11f)
+                                rows += PdfRow(left = "Date: ${displayDate(pu.date)} | Pur #${pu.id}", right = "Total: Rs ${formatMoney(pu.payable)}", fontSize = 12f)
+                                totalPurchases += pu.payable
+                                totalPaid += pu.paid
                             }
                             rows += PdfRow(kind = RowKind.SPACE)
                             rows += PdfRow(left = "--- PAYMENTS ---", bold = true, fontSize = 14f)
-                            if (payments.isEmpty()) rows += PdfRow(left = "No payments.", fontSize = 12f)
+                            if (payments.isEmpty()) rows += PdfRow(left = "No separate payments.", fontSize = 12f)
                             else payments.forEach { p ->
                                 rows += PdfRow(left = "Date: ${displayDate(p.date)} | ${p.note.ifBlank { "-" }}", right = "Amount: Rs ${formatMoney(p.amount)}", fontSize = 12f)
+                                totalPaid += p.amount
                             }
                             rows += PdfRow(kind = RowKind.LINE)
+                            rows += PdfRow(right = "Total Purchases: Rs ${formatMoney(totalPurchases)}", bold = true)
+                            rows += PdfRow(right = "Total Paid: Rs ${formatMoney(totalPaid)}", bold = true)
+                            rows += PdfRow(right = "Current Balance: Rs ${formatMoney(balance)}", bold = true, fontSize = 16f)
+
+                            rows += PdfRow(kind = RowKind.SPACE)
                             rows += PdfRow(left = "Software by ${Branding.COMPANY}  |  ${Branding.PHONE}", fontSize = 9f)
                             val safeName = vendor?.name?.filter { it.isLetterOrDigit() } ?: "Vendor"
                             printer.print("Vendor_Statement_$safeName", rows)
                         }
                     }) { Icon(Icons.Default.Print, "Print", tint = Color.DarkGray) }
                     IconButton(onClick = { showEdit = true }) { Icon(Icons.Default.Edit, "Edit", tint = Color.DarkGray) }
-                    // NAYA DELETE BUTTON
                     IconButton(onClick = {
                         scope.launch {
                             val deleted = repository.deleteVendor(vendorId)
-                            if (deleted) {
-                                onBack()
-                            } else {
-                                snackbar.showSnackbar("❌ Cannot delete! This vendor has purchases or payments.")
-                            }
+                            if (deleted) onBack() else snackbar.showSnackbar("❌ Cannot delete! This vendor has purchases or payments.")
                         }
                     }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
                     Spacer(Modifier.width(16.dp))
                     Button(
                         onClick = { editingPayment = null; showPayment = true },
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AppGreen),
-                        modifier = Modifier.height(40.dp)
+                        shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = AppGreen), modifier = Modifier.height(40.dp)
                     ) {
                         Icon(Icons.Default.Payments, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
@@ -143,9 +140,7 @@ fun VendorDetailScreen(
                     item {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(48.dp)) {
@@ -176,9 +171,7 @@ fun VendorDetailScreen(
                     items(payments) { p ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -197,13 +190,11 @@ fun VendorDetailScreen(
                     items(purchases) { pu ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Purchase #${pu.id} • ${displayDate(pu.date)}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1E293B))
+                                    Text("Pur #${pu.id} • ${displayDate(pu.date)}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1E293B))
                                     Text("Total: Rs ${formatMoney(pu.total)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -269,7 +260,6 @@ fun CustomerDetailScreen(
     var payments by remember { mutableStateOf<List<VendorRepository.CustomerPayment>>(emptyList()) }
     var purchases by remember { mutableStateOf<List<Bill>>(emptyList()) }
     var showEdit by remember { mutableStateOf(false) }
-    // Purana showPayment wala block hata kar ye lagayein:
     var showBillAllocation by remember { mutableStateOf(false) }
     var billToPay by remember { mutableStateOf<Bill?>(null) }
     var editingPayment by remember { mutableStateOf<VendorRepository.CustomerPayment?>(null) }
@@ -307,45 +297,46 @@ fun CustomerDetailScreen(
                             rows += PdfRow(left = "Phone: ${customer?.phone1}", fontSize = 12f)
                             if (customer?.address?.isNotBlank() == true) rows += PdfRow(left = "Address: ${customer?.address}", fontSize = 12f)
                             rows += PdfRow(kind = RowKind.SPACE)
-                            rows += PdfRow(right = "CURRENT BALANCE: Rs ${formatMoney(balance)}", bold = true, fontSize = 16f)
-                            rows += PdfRow(kind = RowKind.SPACE)
+
                             rows += PdfRow(left = "--- PURCHASES (BILLS) ---", bold = true, fontSize = 14f)
+                            var totalSales = 0.0
+                            var totalReceived = 0.0
                             if (purchases.isEmpty()) rows += PdfRow(left = "No purchases.", fontSize = 12f)
                             else purchases.forEach { b ->
-                                rows += PdfRow(left = "${b.invoiceText} | ${displayDate(b.date)}", right = "Rs ${formatMoney(b.grandTotal)}", fontSize = 12f)
-                                rows += PdfRow(left = "  Received: ${formatMoney(b.paidAmount ?: 0.0)}", right = "Bal: ${formatMoney(b.balance)}", fontSize = 11f)
+                                rows += PdfRow(left = "Date: ${displayDate(b.date)} | Inv: ${b.invoiceText}", right = "Rs ${formatMoney(b.grandTotal)}", fontSize = 12f)
+                                totalSales += b.grandTotal
+                                totalReceived += b.received
                             }
+
                             rows += PdfRow(kind = RowKind.SPACE)
                             rows += PdfRow(left = "--- PAYMENTS ---", bold = true, fontSize = 14f)
                             if (payments.isEmpty()) rows += PdfRow(left = "No separate payments.", fontSize = 12f)
                             else payments.forEach { p ->
                                 rows += PdfRow(left = "Date: ${displayDate(p.date)} | ${p.note.ifBlank { "-" }}", right = "Rs ${formatMoney(p.amount)}", fontSize = 12f)
+                                totalReceived += p.amount
                             }
                             rows += PdfRow(kind = RowKind.LINE)
+                            rows += PdfRow(right = "Total Sales: Rs ${formatMoney(totalSales)}", bold = true)
+                            rows += PdfRow(right = "Total Received: Rs ${formatMoney(totalReceived)}", bold = true)
+                            rows += PdfRow(right = "Current Due: Rs ${formatMoney(balance)}", bold = true, fontSize = 16f)
+
+                            rows += PdfRow(kind = RowKind.SPACE)
                             rows += PdfRow(left = "Software by ${Branding.COMPANY}  |  ${Branding.PHONE}", fontSize = 9f)
                             val safe = customer?.name?.filter { it.isLetterOrDigit() } ?: "Customer"
                             printer.print("Customer_Statement_$safe", rows)
                         }
                     }) { Icon(Icons.Default.Print, "Print", tint = Color.DarkGray) }
                     IconButton(onClick = { showEdit = true }) { Icon(Icons.Default.Edit, "Edit", tint = Color.DarkGray) }
-                    // NAYA DELETE BUTTON
                     IconButton(onClick = {
                         scope.launch {
                             val deleted = repository.deleteCustomerAccount(customerId)
-                            if (deleted) {
-                                onBack()
-                            } else {
-                                snackbar.showSnackbar("❌ Cannot delete! This customer has bills or payments.")
-                            }
+                            if (deleted) onBack() else snackbar.showSnackbar("❌ Cannot delete! This customer has bills or payments.")
                         }
                     }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
                     Spacer(Modifier.width(16.dp))
                     Button(
                         onClick = { editingPayment = null; showBillAllocation = true },
-                        enabled = canPay,
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AppGreen),
-                        modifier = Modifier.height(40.dp)
+                        enabled = canPay, shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.buttonColors(containerColor = AppGreen), modifier = Modifier.height(40.dp)
                     ) {
                         Icon(Icons.Default.Payments, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
@@ -370,9 +361,7 @@ fun CustomerDetailScreen(
                     item {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(48.dp)) {
@@ -403,9 +392,7 @@ fun CustomerDetailScreen(
                     items(payments) { p ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -424,9 +411,7 @@ fun CustomerDetailScreen(
                     items(purchases) { b ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0xFFE0E0E0)), modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -467,7 +452,7 @@ fun CustomerDetailScreen(
     }
     if (showBillAllocation) {
         AllocatePaymentDialog(
-            bills = purchases.filter { it.balance > 0.005 }, // Sirf unpaid bills
+            bills = purchases.filter { it.balance > 0.005 },
             onSave = { selectedBill, amount, discount ->
                 scope.launch {
                     repository.payBill(selectedBill.id, amount, discount)
@@ -506,7 +491,6 @@ private fun AllocatePaymentDialog(
                     Text("No pending bills found.", color = Color.Red)
                 } else {
                     Text("Select Bill:", fontSize = 12.sp, color = Color.Gray)
-                    // Dropdown for Bills
                     var expanded by remember { mutableStateOf(false) }
                     Box {
                         OutlinedButton(
@@ -525,22 +509,16 @@ private fun AllocatePaymentDialog(
                             }
                         }
                     }
-
                     HorizontalDivider(color = Color(0xFFE0E0E0))
-
                     OutlinedTextField(
-                        value = amount,
-                        onValueChange = { amount = sanitizeDecimal(it) },
-                        label = { Text("Amount Received (Rs)") },
-                        singleLine = true,
+                        value = amount, onValueChange = { amount = sanitizeDecimal(it) },
+                        label = { Text("Amount Received (Rs)") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = discount,
-                        onValueChange = { discount = sanitizeDecimal(it) },
-                        label = { Text("Discount on this Bill (Rs)") },
-                        singleLine = true,
+                        value = discount, onValueChange = { discount = sanitizeDecimal(it) },
+                        label = { Text("Discount on this Bill (Rs)") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -550,13 +528,7 @@ private fun AllocatePaymentDialog(
         confirmButton = {
             Button(
                 enabled = selectedBill != null && (amount.toDoubleOrNull() ?: 0.0) + (discount.toDoubleOrNull() ?: 0.0) > 0.0,
-                onClick = {
-                    onSave(
-                        selectedBill!!,
-                        amount.toDoubleOrNull() ?: 0.0,
-                        discount.toDoubleOrNull() ?: 0.0
-                    )
-                },
+                onClick = { onSave(selectedBill!!, amount.toDoubleOrNull() ?: 0.0, discount.toDoubleOrNull() ?: 0.0) },
                 shape = RoundedCornerShape(6.dp)
             ) { Text("Save Payment", fontWeight = FontWeight.Bold) }
         },
@@ -579,7 +551,6 @@ private fun SectionTitle(text: String) {
     Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50), modifier = Modifier.padding(top = 8.dp))
 }
 
-// Payment Dialog (Vendor)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PaymentDialog(
@@ -619,48 +590,6 @@ private fun PaymentDialog(
             ) { if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White) else Text("Save", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") } },
-        shape = RoundedCornerShape(8.dp), containerColor = Color.White
-    )
-    if (showDate) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = isoDayToEpochMillis(dateIso.take(10)))
-        DatePickerDialog(
-            onDismissRequest = { showDate = false },
-            confirmButton = { TextButton(onClick = { state.selectedDateMillis?.let { dateIso = epochMillisToIsoDay(it) }; showDate = false }) { Text("OK") } },
-            dismissButton = { TextButton(onClick = { showDate = false }) { Text("Cancel") } }
-        ) { DatePicker(state = state) }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CustomerPaymentDialog(
-    initial: VendorRepository.CustomerPayment?,
-    onSave: (Double, Double, String, String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var amount by remember { mutableStateOf(initial?.amount?.toString() ?: "") }
-    var discount by remember { mutableStateOf(initial?.discount?.toString() ?: "") }
-    var dateIso by remember { mutableStateOf(initial?.date ?: nowIso()) }
-    var note by remember { mutableStateOf(initial?.note ?: "") }
-    var showDate by remember { mutableStateOf(false) }
-    val totalCovered = (amount.toDoubleOrNull() ?: 0.0) + (discount.toDoubleOrNull() ?: 0.0)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Add Customer Payment" else "Edit Payment", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(amount, { amount = sanitizeDecimal(it) }, label = { Text("Amount (Rs)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(discount, { discount = sanitizeDecimal(it) }, label = { Text("Discount (Rs)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth().height(44.dp)) {
-                    Icon(Icons.Default.DateRange, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                    Text("Date: ${isoDayToDisplay(dateIso.take(10))}")
-                }
-                OutlinedTextField(note, { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
-            }
-        },
-        confirmButton = { Button(enabled = totalCovered > 0, onClick = { onSave(amount.toDoubleOrNull() ?: 0.0, discount.toDoubleOrNull() ?: 0.0, dateIso, note) }, shape = RoundedCornerShape(6.dp)) { Text("Save", fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         shape = RoundedCornerShape(8.dp), containerColor = Color.White
     )
     if (showDate) {
