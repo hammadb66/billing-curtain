@@ -27,6 +27,7 @@ import com.example.billing.auth.LicenseState
 import com.example.billing.model.Bill
 import com.example.billing.pdf.PdfPrinter
 import com.example.billing.presentation.BillingRoute
+import com.example.billing.sync.SyncManager
 import com.example.billing.sync.SyncStatus
 import com.example.billing.ui.ActivationScreen
 import com.example.billing.ui.AdminScreen
@@ -108,15 +109,18 @@ fun App(
         }
 
         if (gate is Gate.LoggedIn) {
-            LaunchedEffect(Unit) {
-                while (true) {
-                    val blocked = services.license.recheck()
-                    if (blocked != null) {
-                        licensed = false
-                        gate = Gate.Blocked(blocked.message)
-                        break
+            val loggedInGate = gate as Gate.LoggedIn
+            if (loggedInGate.dev == null) { // Sirf normal user ke liye recheck karein
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        val blocked = services.license.recheck()
+                        if (blocked != null) {
+                            licensed = false
+                            gate = Gate.Blocked(blocked.message)
+                            break
+                        }
+                        delay(AppConfig.RECHECK_MINUTES * 60_000L)
                     }
-                    delay(AppConfig.RECHECK_MINUTES * 60_000L)
                 }
             }
         }
@@ -140,12 +144,15 @@ fun App(
                         onDeveloperLoggedIn = { session -> gate = Gate.Admin(session) },
                     )
 
+                    // App.kt -> Gate.Login
                     Gate.Login -> LoginScreen(
                         services = services,
                         offline = offline,
                         onUserLoggedIn = { user ->
-                            // screen = ... HATA DIYA
-                            gate = Gate.LoggedIn(user)
+                            scope.launch {
+                                services.sync.refreshCloudSyncState() // <-- YEH ADD KAREIN (Har login par cloud check)
+                                gate = Gate.LoggedIn(user)
+                            }
                         },
                         onDeveloperLoggedIn = { session -> gate = Gate.Admin(session) },
                     )
@@ -173,8 +180,11 @@ fun App(
                                 )
                             }
                             composable<BillingRoute.Products> {
+                                val role by services.sync.role.collectAsState()
+                                val isOnline by services.sync.onlineMode.collectAsState() // <-- ADD
                                 ProductListScreen(
                                     repository = services.vendors,
+                                    isViewerMode = isOnline && role == SyncManager.ROLE_VIEWER, // <-- UPDATE
                                     onBack = { navController.popBackStack() },
                                 )
                             }
@@ -229,6 +239,8 @@ fun App(
                                 }
                             }
                             composable<BillingRoute.History> {
+                                val role by services.sync.role.collectAsState()
+                                val isOnline by services.sync.onlineMode.collectAsState() // <-- ADD
                                 HistoryScreen(
                                     repository = services.bills,
                                     printer = printer,
@@ -237,6 +249,7 @@ fun App(
                                     exporter = exporter,
                                     importer = importer,
                                     isDeveloper = g.dev != null,
+                                    isViewerMode = isOnline && role == SyncManager.ROLE_VIEWER, // <-- UPDATE
                                     syncVersion = services.sync.dataVersion.collectAsState().value,
                                     cloudExport = { if (services.sync.isOnlineMode()) services.sync.exportCloudJson() else null },
                                     onlineMode = services.sync.status.collectAsState().value != SyncStatus.Disabled,

@@ -90,3 +90,5 @@ DELETE FROM InvoiceLabel WHERE billId = ?;
 
 deleteAllLabels:
 DELETE FROM InvoiceLabel;
+selectRemoteId:
+SELECT remoteId FROM BillSync WHERE billId = ?;

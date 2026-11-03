@@ -157,8 +157,9 @@ fun ReportScreen(billRepo: BillRepository, printer: PdfPrinter, onBack: () -> Un
         } catch (_: Exception) {}
     }
 
+    val dataVersion = services.sync.dataVersion.collectAsState().value
     LaunchedEffect(Unit) { reloadAll() }
-
+    LaunchedEffect(dataVersion) { reloadAll() }  // <-- add this line
     LaunchedEffect(selectedVendor, fromDate, toDate) {
         val v = selectedVendor
         if (v != null) {

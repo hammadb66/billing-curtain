@@ -30,7 +30,7 @@ object AppConfig {
      * 0 = background me apne aap Firebase se data NAHI mangta (sirf bill banne / edit / delete par, app khulte hi,
      * aur History ke Refresh button par). Kisi shop me dusre laptop ka data jaldi chahiye to 5-10 rakh den.
      */
-    const val BACKGROUND_PULL_MINUTES = 0L
+    const val BACKGROUND_PULL_MINUTES = 40L
 
     /** Naye shop ke liye default kitne laptops/phones ki ijazat ho */
     const val DEFAULT_MAX_DEVICES = 3

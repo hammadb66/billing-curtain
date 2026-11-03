@@ -68,8 +68,7 @@ class BackupRepository(
             val backup = json.decodeFromString(FullBackup.serializer(), jsonString)
 
             // 1. Clear (children pehle, parents baad me)
-            bills.deleteAll()
-
+            bills.deleteAll(queueDeletes = false)
 // vendor payments + purchases pehle delete karo
             vendors.listVendors().forEach { v ->
                 vendors.paymentsFor(v.vendor.id).forEach { p -> vendors.deletePayment(p.id) }
@@ -195,8 +194,7 @@ class BackupRepository(
     }
 
     suspend fun clearLocalData() = withContext(Dispatchers.Default) {
-        bills.deleteAll()
-
+        bills.deleteAll(queueDeletes = true)
         vendors.listVendors().forEach { v ->
             vendors.paymentsFor(v.vendor.id).forEach { p -> vendors.deletePayment(p.id) }
             vendors.listPurchases(v.vendor.id).forEach { p -> vendors.deletePurchase(p.id) }

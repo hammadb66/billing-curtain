@@ -11,7 +11,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,30 +27,14 @@ fun BrandFooter(modifier: Modifier = Modifier, centered: Boolean = false) {
         horizontalAlignment = align,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        HorizontalDivider(color = Color(0xFFE0E0E0))
+        HorizontalDivider(color = AppTheme.Border)
         Spacer(Modifier.height(4.dp))
         if (Branding.licensedTo.isNotBlank()) {
-            Text(
-                "Licensed to: ${Branding.licensedTo}",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = AppGreen,
-                textAlign = textAlign,
-            )
+            Text("Licensed to: ${Branding.licensedTo}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AppGreen, textAlign = textAlign)
         }
-        Text(
-            "Developed by ${Branding.COMPANY}",
-            fontSize = 11.sp,
-            color = Color.Gray,
-            textAlign = textAlign,
-        )
+        Text("Developed by ${Branding.COMPANY}", fontSize = 11.sp, color = AppTheme.TextSecondary, textAlign = textAlign)
         SelectionContainer {
-            Text(
-                "Contact: ${Branding.PHONE}",
-                fontSize = 11.sp,
-                color = Color.Gray,
-                textAlign = textAlign,
-            )
+            Text("Contact: ${Branding.PHONE}", fontSize = 11.sp, color = AppTheme.TextSecondary, textAlign = textAlign)
         }
     }
 }

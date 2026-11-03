@@ -3,9 +3,11 @@ package com.example.billing.sync
 import com.example.billing.auth.AppConfig
 import com.example.billing.auth.httpCall
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -17,13 +19,8 @@ sealed interface CloudList {
     data class Failed(val reason: String) : CloudList
 }
 
-/** error == null matlab kamyab. serverTs = Firebase ne jo server waqt likha (0 = pata nahi). */
 class PutResult(val error: String?, val serverTs: Long = 0, val localBefore: Long = 0, val localAfter: Long = 0)
 
-/**
- * Firebase Realtime Database se bills ka lena dena (REST). Har request is laptop ke login token ke saath jati hai.
- * Net na ho to Failed / error text wapas deta hai.
- */
 class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
     private val db get() = AppConfig.DB_URL
@@ -32,7 +29,6 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
 
     private class Resp(val code: Int, val body: String, val error: String?)
 
-    /** Token laga kar request. Token purana nikla (401) to ek dafa naya le kar dobara. */
     private suspend fun request(method: String, path: String, query: String = "", body: String? = null, timeoutMs: Int = 15_000): Resp {
         var forceNew = false
         repeat(2) {
@@ -49,10 +45,6 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
         else -> "$what HTTP $code"
     }
 
-    /**
-     * Is shop ke bills. since = 0 -> SAARE (pehli dafa), warna sirf wo jin ka serverTs >= since (naye / badle hue).
-     * Delete wale nishan bhi aate hain.
-     */
     suspend fun listBills(shopId: String, since: Long = 0L): CloudList {
         return try {
             val query = if (since > 0) "&orderBy=%22serverTs%22&startAt=$since" else ""
@@ -77,7 +69,6 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
         }
     }
 
-    /** Bill likhna / badalna. serverTs Firebase khud lagata hai. */
     suspend fun putBill(shopId: String, remoteId: String, bill: RemoteBill): PutResult {
         return try {
             val obj = json.encodeToJsonElement(RemoteBill.serializer(), bill).jsonObject
@@ -97,10 +88,6 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
         }
     }
 
-    /**
-     * Is laptop ko is shop ka "member" likhna (rules isi se bills ka darwaza kholte hain, aur sirf tab jab
-     * license ON ho aur laptop block na ho). Jawab me Firebase ka server waqt bhi milta hai (ghadi ka farq nikalne ke liye).
-     */
     suspend fun registerMember(shopId: String): PutResult {
         return try {
             val uid = auth.uid ?: auth.token()?.let { auth.uid } ?: return PutResult(auth.lastError ?: "Firebase login fail")
@@ -125,7 +112,7 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
 
     private fun readTs(body: String, key: String): Long =
         runCatching { json.parseToJsonElement(body).jsonObject[key]?.jsonPrimitive?.longOrNull }.getOrNull() ?: 0L
-    /** Saare reports ek saath Firebase pe bhejna (Requirement 5) */
+
     suspend fun syncReports(shopId: String, reportsJson: String): String? {
         return try {
             val res = request("PUT", "reports/$shopId", body = reportsJson)
@@ -134,7 +121,6 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
         catch (e: Exception) { e.message ?: "network error" }
     }
 
-    /** Firebase se reports lena */
     suspend fun getReports(shopId: String): String? {
         return try {
             val res = request("GET", "reports/$shopId")
@@ -143,19 +129,74 @@ class BillCloudApi(private val auth: CloudAuth, private val deviceId: String) {
         catch (e: Exception) { null }
     }
 
-    /** Is shop ka online data (Bills aur Master Data) delete karne ke liye. */
     suspend fun deleteShopData(shopId: String): String? {
         return try {
-            val res1 = request("DELETE", "reports/$shopId")   // <-- ADD: actual data
-            val res2 = request("DELETE", "bills/$shopId")     // purana, safety
+            val res1 = request("DELETE", "reports/$shopId")
+            val res2 = request("DELETE", "bills/$shopId")
             val res3 = request("DELETE", "shopData/$shopId")
             if (res1.code == 200 && res2.code == 200 && res3.code == 200) null
             else "Failed (reports: ${res1.code}, bills: ${res2.code}, data: ${res3.code})"
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { e.message ?: "network error" }
     }
+
     private companion object {
-        /** Firebase ko kehna: yahan apna server waqt likh do. */
         val SERVER_TIME = buildJsonObject { put(".sv", "timestamp") }
+    }
+
+    // FIXED: JSON String encode crash fixed
+    suspend fun setMasterDevice(shopId: String, deviceId: String): String? {
+        return try {
+            // Direct JSON string quotation marks ke sath
+            val body = "\"$deviceId\""
+            val res = request("PUT", "shops/$shopId/meta/masterDeviceId", body = body)
+            if (res.code == 200) null else "HTTP ${res.code}"
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { e.message ?: "network error" }
+    }
+
+    suspend fun getMasterDevice(shopId: String): String? {
+        return try {
+            val res = request("GET", "shops/$shopId/meta")
+            if (res.code == 200 && res.body.isNotBlank()) {
+                json.parseToJsonElement(res.body).jsonObject["masterDeviceId"]?.jsonPrimitive?.contentOrNull
+            } else null
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    @Serializable
+    data class ShopMeta(val syncEnabled: Boolean = false, val masterDeviceId: String? = null)
+
+    suspend fun getShopMeta(shopId: String): ShopMeta {
+        return try {
+            val res = request("GET", "shops/$shopId/meta")
+            if (res.code == 200 && res.body.isNotBlank() && res.body != "null") {
+                val obj = json.parseToJsonElement(res.body).jsonObject
+                ShopMeta(
+                    syncEnabled = obj["syncEnabled"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
+                    masterDeviceId = obj["masterDeviceId"]?.jsonPrimitive?.contentOrNull
+                )
+            } else ShopMeta()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { ShopMeta() }
+    }
+
+    suspend fun getShopSyncEnabled(shopId: String): Boolean = getShopMeta(shopId).syncEnabled
+
+    suspend fun setShopSyncEnabled(shopId: String, enabled: Boolean): String? {
+        return try {
+            val res = request("PUT", "shops/$shopId/meta/syncEnabled", body = enabled.toString())
+            if (res.code == 200) null else "HTTP ${res.code}"
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { e.message ?: "network error" }
+    }
+
+    // In BillCloudApi.kt
+    suspend fun deleteBill(shopId: String, remoteId: String): String? {
+        return try {
+            val res = request("DELETE", "bills/$shopId/$remoteId")
+            if (res.code == 200) null else "HTTP ${res.code}"
+        } catch (e: Exception) { e.message }
     }
 }

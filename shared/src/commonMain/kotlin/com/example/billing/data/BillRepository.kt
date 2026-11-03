@@ -163,17 +163,32 @@ class BillRepository(database: BillingDatabase) {
     suspend fun deleteBill(id: Long) {
         withContext(Dispatchers.Default) {
             queries.transaction {
-
-                syncQ.deleteSync(id); syncQ.deleteLabel(id); queries.deleteBill(id)
+                // 1. Get the remoteId for this bill
+                val remoteId = syncQ.selectRemoteId(id).executeAsOneOrNull()
+                // 2. If a remoteId exists, record a pending delete
+                if (remoteId != null) {
+                    syncQ.insertPendingDelete(remoteId, now())
+                }
+                // 3. Delete local sync row, label, and bill
+                syncQ.deleteSync(id)
+                syncQ.deleteLabel(id)
+                queries.deleteBill(id)
             }
         }
         onChanged?.invoke()
     }
 
-    suspend fun deleteAll() {
+    // BillRepository.kt
+    suspend fun deleteAll(queueDeletes: Boolean = true) {
         withContext(Dispatchers.Default) {
             queries.transaction {
-                syncQ.deleteAllPendingDeletes()       // <-- purani bhi clear karo
+                if (queueDeletes) {
+                    // Sirf tab cloud ko delete bhejein jab user ne manually delete kiya ho
+                    syncQ.selectAllSync().executeAsList().forEach { sync ->
+                        syncQ.insertPendingDelete(sync.remoteId, now())
+                    }
+                }
+                // Local data clear karein
                 syncQ.deleteAllSync()
                 syncQ.deleteAllLabels()
                 queries.deleteAll()

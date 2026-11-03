@@ -4,15 +4,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,19 +25,15 @@ import com.example.billing.utils.formatMoney
 import com.example.billing.utils.formatQty
 import com.example.billing.utils.sanitizeDecimal
 
-internal val DiscountColor = Color(0xFFD32F2F)
-internal val ExtraColor = Color(0xFF1565C0)
-internal val PaidColor = Color(0xFF2E7D32)
-internal val DueColor = Color(0xFFE65100)
+internal val DiscountColor = AppTheme.Danger
+internal val ExtraColor = AppTheme.Info
+internal val PaidColor = AppTheme.Success
+internal val DueColor = AppTheme.Warning
 
 @Composable
 fun AmountBreakdown(
-    subtotal: Double,
-    discount: Double,
-    extra: Double,
-    modifier: Modifier = Modifier,
-    grandTotal: Double? = null,
-    received: Double? = null,
+    subtotal: Double, discount: Double, extra: Double,
+    modifier: Modifier = Modifier, grandTotal: Double? = null, received: Double? = null,
 ) {
     val hasAdjustments = discount > 0.0 || extra > 0.0
     val balance = if (grandTotal != null && received != null) (grandTotal - received).coerceAtLeast(0.0) else 0.0
@@ -52,8 +45,8 @@ fun AmountBreakdown(
         if (discount > 0.0) AmountLine("Discount", "- Rs ${formatMoney(discount)}", DiscountColor)
         if (extra > 0.0) AmountLine("Extra / Misc", "+ Rs ${formatMoney(extra)}", ExtraColor)
         if (grandTotal != null) {
-            if (hasAdjustments) HorizontalDivider(color = Color(0xFFE0E0E0), modifier = Modifier.padding(vertical = 4.dp))
-            AmountLine("GRAND TOTAL", "Rs ${formatMoney(grandTotal)}", Color(0xFF0F172A), big = true)
+            if (hasAdjustments) HorizontalDivider(color = AppTheme.Border, modifier = Modifier.padding(vertical = 4.dp))
+            AmountLine("GRAND TOTAL", "Rs ${formatMoney(grandTotal)}", AppTheme.TextPrimary, big = true)
             if (hasBalance && received != null) {
                 AmountLine("Received", "Rs ${formatMoney(received)}", PaidColor)
                 AmountLine("PENDING", "Rs ${formatMoney(balance)}", DueColor, big = true)
@@ -63,13 +56,14 @@ fun AmountBreakdown(
 }
 
 @Composable
-private fun AmountLine(label: String, value: String, color: Color = Color(0xFF475569), big: Boolean = false) {
+private fun AmountLine(label: String, value: String, color: Color = AppTheme.TextSecondary, big: Boolean = false) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontSize = 13.sp, fontWeight = if (big) FontWeight.Bold else FontWeight.Medium, color = if (big) Color(0xFF2C3E50) else color)
+        Text(label, fontSize = 13.sp, fontWeight = if (big) FontWeight.Bold else FontWeight.Medium,
+            color = if (big) AppTheme.TextPrimary else color)
         Text(value, fontSize = if (big) 18.sp else 14.sp, fontWeight = if (big) FontWeight.Black else FontWeight.SemiBold, color = color)
     }
 }
@@ -78,8 +72,8 @@ private fun AmountLine(label: String, value: String, color: Color = Color(0xFF47
 fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifier) {
     Surface(
         color = DueColor.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(6.dp),
-        border = BorderStroke(1.dp, DueColor.copy(alpha = 0.3f)),
+        shape = RoundedCornerShape(AppTheme.RadiusSm),
+        border = BorderStroke(1.dp, DueColor.copy(alpha = 0.25f)),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -87,7 +81,7 @@ fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifi
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Received: Rs ${formatMoney(received)}", fontSize = 13.sp, color = Color(0xFF475569))
+            Text("Received: Rs ${formatMoney(received)}", fontSize = 12.sp, color = AppTheme.TextSecondary)
             Text("Pending: Rs ${formatMoney(balance)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DueColor)
         }
     }
@@ -95,20 +89,17 @@ fun BalanceBanner(received: Double, balance: Double, modifier: Modifier = Modifi
 
 @Composable
 fun AmountTag(text: String, color: Color) {
-    Surface(color = color.copy(alpha = 0.12f), shape = RoundedCornerShape(4.dp)) {
-        Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+    Surface(color = color.copy(alpha = 0.12f), shape = RoundedCornerShape(6.dp)) {
+        Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
     }
 }
 
 @Composable
 fun DiscountInput(
-    value: String,
-    onValueChange: (String) -> Unit,
-    isPercent: Boolean,
-    onModeChange: (Boolean) -> Unit,
-    computedAmount: Double,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
+    value: String, onValueChange: (String) -> Unit,
+    isPercent: Boolean, onModeChange: (Boolean) -> Unit,
+    computedAmount: Double, modifier: Modifier = Modifier, enabled: Boolean = true,
 ) {
     OutlinedTextField(
         value = value,
@@ -123,59 +114,41 @@ fun DiscountInput(
             }
         },
         supportingText = if (isPercent) ({ Text("= Rs ${formatMoney(computedAmount)}", fontSize = 10.sp) }) else null,
-        singleLine = true,
-        enabled = enabled,
-        shape = RoundedCornerShape(6.dp),
+        singleLine = true, enabled = enabled,
+        shape = RoundedCornerShape(AppTheme.RadiusSm),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = modifier,
-        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen)
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = AppGreen,
+            unfocusedBorderColor = AppTheme.Border
+        )
     )
 }
 
 @Composable
 fun ItemEntryCard(
-    name: String,
-    occurrence: Int,
-    qty: String,
-    discount: String,
-    discountIsPercent: Boolean, // <-- NAYA parameter add karein
-    onDiscountChange: (String) -> Unit,
-    onQtyChange: (String) -> Unit,
-    rate: String,
-    onRateChange: (String) -> Unit,
-    total: Double,
-    isIncomplete: Boolean,
-    unit: String = "",
-    displayType: String = "default",
-    onDisplayTypeChange: (String) -> Unit = {},
-    productName: String = "",
-    categoryName: String = "",
-    subcategoryName: String = "",
-    groupName: String = "",
-    subgroupName: String = "",
-    stock: Double = 0.0,
-    productDiscountPct: Double = 0.0,
-    onDuplicate: () -> Unit,
-    onDelete: () -> Unit,
+    name: String, occurrence: Int, qty: String, discount: String, discountIsPercent: Boolean,
+    onDiscountChange: (String) -> Unit, onQtyChange: (String) -> Unit,
+    rate: String, onRateChange: (String) -> Unit, total: Double, isIncomplete: Boolean,
+    unit: String = "", displayType: String = "default", onDisplayTypeChange: (String) -> Unit = {},
+    productName: String = "", categoryName: String = "", subcategoryName: String = "",
+    groupName: String = "", subgroupName: String = "", stock: Double = 0.0,
+    productDiscountPct: Double = 0.0, onDuplicate: () -> Unit, onDelete: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, if (isIncomplete) Color(0xFFFFCDD2) else Color(0xFFE0E0E0)),
+        shape = RoundedCornerShape(AppTheme.RadiusSm),
+        color = AppTheme.Surface,
+        border = BorderStroke(1.dp, if (isIncomplete) AppTheme.Danger.copy(alpha = 0.4f) else AppTheme.Border),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
-            // TOP ROW
+        Column(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (occurrence > 1) "$name ($occurrence)" else name,
-                    modifier = Modifier.weight(1f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
-                    maxLines = 2,
+                    modifier = Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    color = AppTheme.TextPrimary, maxLines = 2,
                 )
                 TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.height(30.dp)) {
                     Icon(Icons.Default.Add, null, tint = AppGreen, modifier = Modifier.size(14.dp))
@@ -183,11 +156,10 @@ fun ItemEntryCard(
                     Text("Same", fontSize = 11.sp, color = AppGreen, fontWeight = FontWeight.Bold)
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Delete, null, tint = AppTheme.Danger, modifier = Modifier.size(16.dp))
                 }
             }
 
-            // MIDDLE ROW (Dropdown aur Stock)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -199,15 +171,15 @@ fun ItemEntryCard(
                         modifier = Modifier.clickable { expanded = true }.padding(vertical = 2.dp)
                     ) {
                         val displayLabel = when(displayType) {
-                            "product" -> "Show: Product"
-                            "category" -> "Show: Category"
-                            "subcategory" -> "Show: Subcategory"
-                            "group" -> "Show: Group"
-                            "subgroup" -> "Show: Subgroup"
-                            else -> "Show: Default"
+                            "product" -> "Product"; "category" -> "Category"; "subcategory" -> "Subcategory"
+                            "group" -> "Group"; "subgroup" -> "Subgroup"; else -> "Default"
                         }
-                        Text(displayLabel, fontSize = 11.sp, color = Color(0xFF1565C0), fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(14.dp), tint = Color(0xFF1565C0))
+                        Surface(color = AppTheme.InfoLight, shape = RoundedCornerShape(4.dp)) {
+                            Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(displayLabel, fontSize = 10.sp, color = AppTheme.Info, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(12.dp), tint = AppTheme.Info)
+                            }
+                        }
                     }
                     DropdownMenu(expanded, { expanded = false }) {
                         listOf(
@@ -218,65 +190,55 @@ fun ItemEntryCard(
                             "group" to "Group: ${groupName.ifBlank { "—" }}",
                             "subgroup" to "Subgroup: ${subgroupName.ifBlank { "—" }}"
                         ).forEach { (key, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label, fontSize = 13.sp) },
-                                onClick = { onDisplayTypeChange(key); expanded = false }
-                            )
+                            DropdownMenuItem(text = { Text(label, fontSize = 13.sp) }, onClick = { onDisplayTypeChange(key); expanded = false })
                         }
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (productDiscountPct > 0.0) {
-                        Text(
-                            "(${formatQty(productDiscountPct)}% off)",
-                            fontSize = 11.sp,
-                            color = Color(0xFFE65100),
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
+                        Surface(color = AppTheme.WarningLight, shape = RoundedCornerShape(4.dp)) {
+                            Text("${formatQty(productDiscountPct)}% off", fontSize = 10.sp, color = AppTheme.Warning,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
                     }
-                    Text(
-                        "Stock: ${formatMoney(stock)} $unit",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (stock > 0) AppGreen else Color.Red
-                    )
+                    Surface(
+                        color = if (stock > 0) AppTheme.SuccessLight else AppTheme.DangerLight,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text("Stock: ${formatMoney(stock)} $unit", fontSize = 10.sp,
+                            color = if (stock > 0) AppTheme.Success else AppTheme.Danger,
+                            fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // BOTTOM ROW (Qty | Rate | Disc | Total)
-            Row(
-                Modifier.padding(end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
+            Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (unit.isNotBlank()) "Qty ($unit)" else "Qty", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    Text(if (unit.isNotBlank()) "Qty ($unit)" else "Qty", fontSize = 10.sp, color = AppTheme.TextSecondary, fontWeight = FontWeight.Bold)
                     CompactNumberField(qty, onQtyChange, Modifier.fillMaxWidth())
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Rate", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    Text("Rate", fontSize = 10.sp, color = AppTheme.TextSecondary, fontWeight = FontWeight.Bold)
                     CompactNumberField(rate, onRateChange, Modifier.fillMaxWidth())
                 }
-                Column(Modifier.weight(0.8f)) {
-                    Text("Disc", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                Column(Modifier.weight(0.9f)) {
+                    Text("Disc", fontSize = 10.sp, color = AppTheme.TextSecondary, fontWeight = FontWeight.Bold)
                     CompactNumberField(discount, onDiscountChange, Modifier.fillMaxWidth())
                 }
                 Column(Modifier.weight(1.2f), horizontalAlignment = Alignment.End) {
-                    Text("Total", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                    // NAYA CALCULATION
+                    Text("Total", fontSize = 10.sp, color = AppTheme.TextSecondary, fontWeight = FontWeight.Bold)
                     val totalValue = (qty.toDoubleOrNull() ?: 0.0) * (rate.toDoubleOrNull() ?: 0.0)
                     val prodDisc = totalValue * (productDiscountPct / 100.0)
                     val netValue = totalValue - prodDisc
                     val discValue = discount.toDoubleOrNull() ?: 0.0
                     val finalTotal = if (discountIsPercent) (netValue * (1.0 - discValue / 100.0)) else (netValue - discValue)
-
                     Text(
                         "Rs ${formatMoney(finalTotal.coerceAtLeast(0.0))}",
-                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp, fontWeight = FontWeight.Black,
                         color = AppGreen, textAlign = TextAlign.End,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
@@ -288,10 +250,8 @@ fun ItemEntryCard(
 
 @Composable
 fun AddItemDialog(
-    products: List<Product>,
-    onPick: (Product) -> Unit,
-    onManageProducts: () -> Unit,
-    onDismiss: () -> Unit,
+    products: List<Product>, onPick: (Product) -> Unit,
+    onManageProducts: () -> Unit, onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     val list = remember(query, products) {
@@ -300,47 +260,47 @@ fun AddItemDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Product", fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50)) },
+        title = { Text("Select Product", fontWeight = FontWeight.Bold, color = AppTheme.TextPrimary, fontSize = 18.sp) },
         text = {
             Column {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
                     placeholder = { Text("Search product...", fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray, modifier = Modifier.size(18.dp)) },
-                    singleLine = true, shape = RoundedCornerShape(6.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = AppTheme.TextMuted, modifier = Modifier.size(18.dp)) },
+                    singleLine = true, shape = RoundedCornerShape(AppTheme.RadiusSm),
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen)
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppGreen, unfocusedBorderColor = AppTheme.Border)
                 )
                 Spacer(Modifier.height(12.dp))
-                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                    if (list.isEmpty()) Text("No product found", color = Color.Gray, modifier = Modifier.padding(12.dp))
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    if (list.isEmpty()) Text("No product found", color = AppTheme.TextMuted, modifier = Modifier.padding(12.dp))
                     list.forEach { p ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onPick(p) },
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-                            color = Color.White
+                        Card(
+                            onClick = { onPick(p) },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            shape = RoundedCornerShape(AppTheme.RadiusSm),
+                            border = BorderStroke(1.dp, AppTheme.Border),
+                            colors = CardDefaults.cardColors(containerColor = AppTheme.Surface),
+                            elevation = CardDefaults.cardElevation(0.dp)
                         ) {
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                IconCircle(Icons.Default.Inventory2, AppGreen, size = 36, iconSize = 18)
+                                Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(p.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                                    Text(p.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.TextPrimary)
                                     val subtitle = listOfNotNull(
                                         p.categoryName.takeIf { it.isNotBlank() },
                                         p.subcategoryName.takeIf { it.isNotBlank() }
                                     ).joinToString(" › ")
-                                    if (subtitle.isNotBlank()) Text(subtitle, fontSize = 11.sp, color = Color.Gray)
+                                    if (subtitle.isNotBlank()) Text(subtitle, fontSize = 11.sp, color = AppTheme.TextSecondary)
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text("Rs ${formatMoney(p.salePrice)}", fontSize = 13.sp, color = AppGreen, fontWeight = FontWeight.Bold)
-
-                                    if (p.discountPct > 0.0) {
-                                        Text("(${formatQty(p.discountPct)}% off)", fontSize = 11.sp, color = Color(0xFFE65100), fontWeight = FontWeight.Bold)
-                                    }
-
+                                    if (p.discountPct > 0.0) Text("${formatQty(p.discountPct)}% off", fontSize = 10.sp, color = AppTheme.Warning, fontWeight = FontWeight.Bold)
                                     Text(
                                         "Stock: ${formatMoney(p.liveStock ?: p.openingStock)} ${p.unit}",
                                         fontSize = 10.sp,
-                                        color = if ((p.liveStock ?: p.openingStock) > 0) AppGreen else Color.Red,
+                                        color = if ((p.liveStock ?: p.openingStock) > 0) AppTheme.Success else AppTheme.Danger,
                                         fontWeight = FontWeight.Bold,
                                     )
                                 }
@@ -357,8 +317,8 @@ fun AddItemDialog(
                 Text("Manage Products", color = AppGreen, fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) } },
-        shape = RoundedCornerShape(8.dp),
-        containerColor = Color.White
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = AppTheme.TextSecondary) } },
+        shape = RoundedCornerShape(AppTheme.RadiusLg),
+        containerColor = AppTheme.Surface
     )
 }
