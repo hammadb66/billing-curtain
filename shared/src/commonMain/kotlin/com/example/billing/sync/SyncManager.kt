@@ -132,26 +132,37 @@ class SyncManager(
     }
 
     // SyncManager.kt
-    // SyncManager.kt -> refreshCloudSyncState() function ko is se replace karein
     suspend fun refreshCloudSyncState() {
         val shopId = settings.get(SettingKeys.SHOP_ID) ?: return
         try {
             val meta = api.getShopMeta(shopId)
             if (!meta.syncEnabled) {
-                // Admin ne Firebase se Sync OFF kar diya hai
                 settings.put(SettingKeys.SYNC_MODE, MODE_OFFLINE)
                 _onlineMode.value = false
                 _status.value = SyncStatus.Disabled
                 currentRole = ROLE_MASTER
+                _role.value = currentRole
+                settings.put(SYNC_ROLE_KEY, currentRole)
             } else {
-                // Sync ON hai, latest role fetch karein
+                val oldRole = currentRole
                 currentRole = if (meta.masterDeviceId == deviceId) ROLE_MASTER else ROLE_VIEWER
+
+                // 👇 NAYA: Agar Viewer abhi Master bana hai, toh usko force upload karwao
+                if (currentRole == ROLE_MASTER && oldRole == ROLE_VIEWER) {
+                    hasUnsyncedLocal = true
+                    trigger.trySend(Unit) // Sync loop ko jagao
+                }
+
+                _role.value = currentRole
+                settings.put(SYNC_ROLE_KEY, currentRole)
+
+                if (!isOnlineMode()) {
+                    enableOnline()
+                } else {
+                    _onlineMode.value = true
+                }
             }
-            _role.value = currentRole
-            settings.put(SYNC_ROLE_KEY, currentRole)
-        } catch (_: Exception) {
-            // Internet issue, ignore karein
-        }
+        } catch (e: Exception) { }
     }
 
     suspend fun getShopMeta(shopId: String) = api.getShopMeta(shopId)
@@ -260,7 +271,6 @@ class SyncManager(
             mutex.withLock {
                 if (isOnlineMode()) {
                     refreshPendingState()
-                    // Only sync if something is pending
                     if (hasUnsyncedLocal || _downloadPending.value) {
                         doSync()
                     } else if (_status.value is SyncStatus.Waiting || _status.value is SyncStatus.Syncing) {
@@ -271,13 +281,30 @@ class SyncManager(
                     _onlineMode.value = false
                 }
             }
+
+            // 👇 NAYA FIX: Auto-reconnect logic 👇
+            // Agar app offline hai, toh check karein ke Firebase pe sync ON hai kya.
+            // Agar ON hai, toh bina user ko puche khud online ho jayein.
+            if (!isOnlineMode()) {
+                try {
+                    val shopId = settings.get(SettingKeys.SHOP_ID)
+                    if (shopId != null) {
+                        val meta = api.getShopMeta(shopId)
+                        if (meta.syncEnabled) {
+                            enableOnline()
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Net abhi bhi off hai, kuch na karein
+                }
+            }
+
             val waitMs = if (AppConfig.BACKGROUND_PULL_MINUTES > 0)
                 AppConfig.BACKGROUND_PULL_MINUTES * 60_000L else null
             if (waitMs == null) trigger.receive() else withTimeoutOrNull(waitMs) { trigger.receive() }
             delay(400)
         }
     }
-
     private suspend fun doSync(): String? {
         return try {
             _status.value = SyncStatus.Syncing
@@ -372,14 +399,18 @@ class SyncManager(
             settings.put(SettingKeys.SYNC_SKEW, skew.toString())
         }
 
-        // NAYA: Cloud se Master Device check karein
+        val oldRole = currentRole
         val masterId = api.getMasterDevice(shopId)
+
+        // 👇 NAYA: Agar Master assign nahi hai, toh online mat hone do
         if (masterId == null) {
-            // Agar koi master set nahi hai, to jo pehli dafa aaya hai wo master ban jaye
-            api.setMasterDevice(shopId, deviceId)
-            currentRole = ROLE_MASTER
+            return "No Master assigned! Please contact Admin to assign a Master device."
         } else {
             currentRole = if (masterId == deviceId) ROLE_MASTER else ROLE_VIEWER
+            // Agar naya master bana hai, toh force upload
+            if (currentRole == ROLE_MASTER && oldRole == ROLE_VIEWER) {
+                hasUnsyncedLocal = true
+            }
         }
         _role.value = currentRole
         settings.put(SYNC_ROLE_KEY, currentRole)

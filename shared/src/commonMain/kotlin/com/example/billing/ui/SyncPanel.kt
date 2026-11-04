@@ -116,7 +116,9 @@ fun SyncPanel(services: AppServices) {
             HorizontalDivider(color = AppTheme.Border)
 
             // ROLE SELECTOR
-            Text("This device's role", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AppTheme.TextSecondary)
+            Text("This device's role: ${if (isMaster) "MASTER" else "VIEWER"}",
+                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isMaster) AppGreen else AppTheme.Info)
+            Text("(Role is assigned by Admin. You cannot change it here.)", fontSize = 11.sp, color = AppTheme.TextSecondary)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // SyncPanel() function ke andar RoleChip me:
                 RoleChip(

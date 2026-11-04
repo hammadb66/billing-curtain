@@ -22,9 +22,6 @@ import com.example.billing.AppServices
 import com.example.billing.auth.*
 import com.example.billing.sync.BillCloudApi
 import kotlinx.coroutines.launch
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +52,10 @@ fun AdminScreen(
     var deleteShopFor by remember { mutableStateOf<String?>(null) }
     var deleteShopBills by remember { mutableStateOf(false) }
 
+    // Naye Variables: Alerts ke liye
+    var deviceToMakeMaster by remember { mutableStateOf<Pair<String, DeviceRecord>?>(null) }
+    var deviceToDelete by remember { mutableStateOf<Pair<String, DeviceRecord>?>(null) }
+
     suspend fun loadUsers() { users = services.auth.listUsers() }
     suspend fun loadThisShop() { thisShop = services.settings.get(SettingKeys.SHOP_ID) }
     suspend fun loadShops() {
@@ -77,7 +78,6 @@ fun AdminScreen(
         containerColor = AppTheme.Bg,
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            // ===== HEADER =====
             // ===== HEADER =====
             Surface(color = AppTheme.Surface, shadowElevation = 2.dp) {
                 BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -284,103 +284,130 @@ fun AdminScreen(
                                                         border = BorderStroke(1.dp, if (isMaster) AppGreen else AppTheme.Border),
                                                         modifier = Modifier.fillMaxWidth()
                                                     ) {
-                                                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                            Icon(Icons.Default.Computer, null, tint = if (d.blocked) AppTheme.Danger else if (isMaster) AppGreen else AppTheme.TextSecondary, modifier = Modifier.size(18.dp))
-                                                            Spacer(Modifier.width(8.dp))
-                                                            Column(Modifier.weight(1f)) {
-                                                                Text(d.label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = AppTheme.TextPrimary)
-                                                                Text("ID: ${d.id.take(8)}", fontSize = 10.sp, color = AppTheme.TextMuted)
-                                                            }
+                                                        // Responsive UI Fix using BoxWithConstraints
+                                                        BoxWithConstraints {
+                                                            val isSmallScreen = maxWidth < 450.dp
 
-                                                            // Role Badge
-                                                            Surface(color = if (isMaster) AppGreen else AppTheme.InfoLight, shape = RoundedCornerShape(4.dp)) {
-                                                                Text(
-                                                                    if (isMaster) "MASTER" else "VIEWER",
-                                                                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                                                                    color = if (isMaster) Color.White else AppTheme.Info,
-                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                )
-                                                            }
+                                                            if (isSmallScreen) {
+                                                                // MOBILE VIEW (Stack vertically)
+                                                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                        Icon(Icons.Default.Computer, null, tint = if (d.blocked) AppTheme.Danger else if (isMaster) AppGreen else AppTheme.TextSecondary, modifier = Modifier.size(18.dp))
+                                                                        Spacer(Modifier.width(8.dp))
+                                                                        Column(Modifier.weight(1f)) {
+                                                                            Text(d.label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = AppTheme.TextPrimary)
+                                                                            Text("ID: ${d.id.take(8)}", fontSize = 10.sp, color = AppTheme.TextMuted)
+                                                                        }
+                                                                        Surface(color = if (isMaster) AppGreen else AppTheme.InfoLight, shape = RoundedCornerShape(4.dp)) {
+                                                                            Text(
+                                                                                if (isMaster) "MASTER" else "VIEWER",
+                                                                                fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                                                                color = if (isMaster) Color.White else AppTheme.Info,
+                                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                            )
+                                                                        }
+                                                                    }
 
-                                                            // Make Master Button with Loading
-                                                            if (!isMaster && !d.blocked) {
-                                                                Spacer(Modifier.width(8.dp))
-                                                                if (isUpdatingRole) {
-                                                                    CircularProgressIndicator(
-                                                                        modifier = Modifier.size(20.dp),
-                                                                        strokeWidth = 2.dp,
-                                                                        color = AppTheme.Info
-                                                                    )
-                                                                } else {
-                                                                    TextButton(
-                                                                        onClick = {
-                                                                            scope.launch {
-                                                                                updatingRoleDeviceId = d.id
-                                                                                try {
-                                                                                    val url = "${AppConfig.DB_URL}/shops/$id/meta/masterDeviceId.json?auth=${session.idToken}"
-                                                                                    val res = httpCall("PUT", url, "\"${d.id}\"", 15_000)
-                                                                                    if (res.code == 200) {
-                                                                                        snackbar.showSnackbar("${d.label} is now the Master.")
-                                                                                        loadShops()
-                                                                                    } else {
-                                                                                        snackbar.showSnackbar("Failed: HTTP ${res.code}")
-                                                                                    }
-                                                                                } catch (e: Exception) {
-                                                                                    snackbar.showSnackbar("Error: ${e.message}")
-                                                                                } finally {
-                                                                                    updatingRoleDeviceId = null
+                                                                    // Mobile: Action buttons below
+                                                                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                                                        if (!isMaster && !d.blocked) {
+                                                                            if (isUpdatingRole) {
+                                                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = AppTheme.Info)
+                                                                            } else {
+                                                                                TextButton(
+                                                                                    onClick = { deviceToMakeMaster = id to d },
+                                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                                                    modifier = Modifier.height(30.dp)
+                                                                                ) {
+                                                                                    Text("Make Master", fontSize = 11.sp, color = AppTheme.Info, fontWeight = FontWeight.Bold)
                                                                                 }
                                                                             }
-                                                                        },
-                                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                                                        modifier = Modifier.height(30.dp)
-                                                                    ) {
-                                                                        Text("Make Master", fontSize = 11.sp, color = AppTheme.Info, fontWeight = FontWeight.Bold)
+                                                                            Spacer(Modifier.width(8.dp))
+                                                                        }
+                                                                        IconButton(
+                                                                            onClick = {
+                                                                                scope.launch {
+                                                                                    updatingRoleDeviceId = d.id
+                                                                                    val err = services.firebase.setDeviceBlocked(session.idToken, id, d.id, !d.blocked)
+                                                                                    if (err == null) {
+                                                                                        snackbar.showSnackbar(if (d.blocked) "Device unblocked." else "Device blocked.")
+                                                                                        loadShops()
+                                                                                    } else snackbar.showSnackbar(err)
+                                                                                    updatingRoleDeviceId = null
+                                                                                }
+                                                                            },
+                                                                            modifier = Modifier.size(30.dp)
+                                                                        ) {
+                                                                            Icon(if (d.blocked) Icons.Default.LockOpen else Icons.Default.Lock, "Block/Unblock", tint = if (d.blocked) AppGreen else AppTheme.Danger, modifier = Modifier.size(16.dp))
+                                                                        }
+                                                                        IconButton(
+                                                                            onClick = { deviceToDelete = id to d },
+                                                                            modifier = Modifier.size(30.dp)
+                                                                        ) {
+                                                                            Icon(Icons.Default.Delete, "Delete", tint = AppTheme.Danger, modifier = Modifier.size(16.dp))
+                                                                        }
                                                                     }
                                                                 }
-                                                            }
+                                                            } else {
+                                                                // DESKTOP VIEW (Single row)
+                                                                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                                    Icon(Icons.Default.Computer, null, tint = if (d.blocked) AppTheme.Danger else if (isMaster) AppGreen else AppTheme.TextSecondary, modifier = Modifier.size(18.dp))
+                                                                    Spacer(Modifier.width(8.dp))
+                                                                    Column(Modifier.weight(1f)) {
+                                                                        Text(d.label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = AppTheme.TextPrimary)
+                                                                        Text("ID: ${d.id.take(8)}", fontSize = 10.sp, color = AppTheme.TextMuted)
+                                                                    }
 
-                                                            Spacer(Modifier.width(4.dp))
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                                // Block / Unblock Button
-                                                                IconButton(
-                                                                    onClick = {
-                                                                        scope.launch {
-                                                                            updatingRoleDeviceId = d.id
-                                                                            val err = services.firebase.setDeviceBlocked(session.idToken, id, d.id, !d.blocked)
-                                                                            if (err == null) {
-                                                                                snackbar.showSnackbar(if (d.blocked) "Device unblocked." else "Device blocked.")
-                                                                                loadShops()
-                                                                            } else snackbar.showSnackbar(err)
-                                                                            updatingRoleDeviceId = null
-                                                                        }
-                                                                    },
-                                                                    modifier = Modifier.size(30.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        if (d.blocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                                                                        contentDescription = "Block/Unblock",
-                                                                        tint = if (d.blocked) AppGreen else AppTheme.Danger,
-                                                                        modifier = Modifier.size(16.dp)
-                                                                    )
-                                                                }
+                                                                    // Role Badge
+                                                                    Surface(color = if (isMaster) AppGreen else AppTheme.InfoLight, shape = RoundedCornerShape(4.dp)) {
+                                                                        Text(
+                                                                            if (isMaster) "MASTER" else "VIEWER",
+                                                                            fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                                                            color = if (isMaster) Color.White else AppTheme.Info,
+                                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                        )
+                                                                    }
 
-                                                                // Delete Button
-                                                                IconButton(
-                                                                    onClick = {
-                                                                        scope.launch {
-                                                                            updatingRoleDeviceId = d.id
-                                                                            val err = services.firebase.removeDevice(session.idToken, id, d.id)
-                                                                            if (err == null) {
-                                                                                snackbar.showSnackbar("Device removed.")
-                                                                                loadShops()
-                                                                            } else snackbar.showSnackbar(err)
-                                                                            updatingRoleDeviceId = null
+                                                                    if (!isMaster && !d.blocked) {
+                                                                        Spacer(Modifier.width(8.dp))
+                                                                        if (isUpdatingRole) {
+                                                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = AppTheme.Info)
+                                                                        } else {
+                                                                            TextButton(
+                                                                                onClick = { deviceToMakeMaster = id to d },
+                                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                                                modifier = Modifier.height(30.dp)
+                                                                            ) {
+                                                                                Text("Make Master", fontSize = 11.sp, color = AppTheme.Info, fontWeight = FontWeight.Bold)
+                                                                            }
                                                                         }
-                                                                    },
-                                                                    modifier = Modifier.size(30.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = AppTheme.Danger, modifier = Modifier.size(16.dp))
+                                                                    }
+
+                                                                    Spacer(Modifier.width(4.dp))
+                                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                        IconButton(
+                                                                            onClick = {
+                                                                                scope.launch {
+                                                                                    updatingRoleDeviceId = d.id
+                                                                                    val err = services.firebase.setDeviceBlocked(session.idToken, id, d.id, !d.blocked)
+                                                                                    if (err == null) {
+                                                                                        snackbar.showSnackbar(if (d.blocked) "Device unblocked." else "Device blocked.")
+                                                                                        loadShops()
+                                                                                    } else snackbar.showSnackbar(err)
+                                                                                    updatingRoleDeviceId = null
+                                                                                }
+                                                                            },
+                                                                            modifier = Modifier.size(30.dp)
+                                                                        ) {
+                                                                            Icon(if (d.blocked) Icons.Default.LockOpen else Icons.Default.Lock, "Block/Unblock", tint = if (d.blocked) AppGreen else AppTheme.Danger, modifier = Modifier.size(16.dp))
+                                                                        }
+                                                                        IconButton(
+                                                                            onClick = { deviceToDelete = id to d },
+                                                                            modifier = Modifier.size(30.dp)
+                                                                        ) {
+                                                                            Icon(Icons.Default.Delete, "Delete", tint = AppTheme.Danger, modifier = Modifier.size(16.dp))
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -391,7 +418,6 @@ fun AdminScreen(
                                     }
 
                                     // ---- Row 3: Actions ----
-                                    // AdminScreen.kt -> Shops and Devices card ke andar (Row 3: Actions)
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                         modifier = Modifier.fillMaxWidth()
@@ -558,6 +584,74 @@ fun AdminScreen(
                 ) { Text("Delete", fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { deleteShopFor = null; deleteShopBills = false }) { Text("Cancel", color = AppTheme.TextSecondary) } },
+            shape = RoundedCornerShape(AppTheme.RadiusLg), containerColor = AppTheme.Surface
+        )
+    }
+
+    // ALERT 1: Make Master Confirmation
+    deviceToMakeMaster?.let { (shopId, device) ->
+        AlertDialog(
+            onDismissRequest = { deviceToMakeMaster = null },
+            icon = { IconCircle(Icons.Default.Warning, AppTheme.Warning, 48, 24) },
+            title = { Text("Change Master Device?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Are you sure you want to make '${device.label}' the Master?\n\nNote: The current Master will become a Viewer and download data from this device.", color = AppTheme.TextSecondary)
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deviceToMakeMaster = null
+                        scope.launch {
+                            updatingRoleDeviceId = device.id
+                            try {
+                                val url = "${AppConfig.DB_URL}/shops/$shopId/meta/masterDeviceId.json?auth=${session.idToken}"
+                                val res = httpCall("PUT", url, "\"${device.id}\"", 15_000)
+                                if (res.code == 200) {
+                                    snackbar.showSnackbar("${device.label} is now the Master.")
+                                    loadShops()
+                                } else {
+                                    snackbar.showSnackbar("Failed: HTTP ${res.code}")
+                                }
+                            } catch (e: Exception) {
+                                snackbar.showSnackbar("Error: ${e.message}")
+                            } finally {
+                                updatingRoleDeviceId = null
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.Warning)
+                ) { Text("Yes, Make Master", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { deviceToMakeMaster = null }) { Text("Cancel") } },
+            shape = RoundedCornerShape(AppTheme.RadiusLg), containerColor = AppTheme.Surface
+        )
+    }
+
+    // ALERT 2: Delete Device Confirmation
+    deviceToDelete?.let { (shopId, device) ->
+        AlertDialog(
+            onDismissRequest = { deviceToDelete = null },
+            icon = { IconCircle(Icons.Default.Delete, AppTheme.Danger, 48, 24) },
+            title = { Text("Remove Device?", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to permanently remove '${device.label}' from this shop?", color = AppTheme.TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        deviceToDelete = null
+                        scope.launch {
+                            updatingRoleDeviceId = device.id
+                            val err = services.firebase.removeDevice(session.idToken, shopId, device.id)
+                            if (err == null) {
+                                snackbar.showSnackbar("Device removed.")
+                                loadShops()
+                            } else snackbar.showSnackbar(err)
+                            updatingRoleDeviceId = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.Danger)
+                ) { Text("Delete", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { deviceToDelete = null }) { Text("Cancel") } },
             shape = RoundedCornerShape(AppTheme.RadiusLg), containerColor = AppTheme.Surface
         )
     }

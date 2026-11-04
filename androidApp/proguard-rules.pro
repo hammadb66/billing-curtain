@@ -1,21 +1,52 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ==========================================
+# 1. Compose & Kotlin Core
+# ==========================================
+-keep class androidx.compose.runtime.** { *; }
+-keep class androidx.compose.ui.** { *; }
+-keep class androidx.compose.material.** { *; }
+-keep class androidx.compose.navigation.** { *; }
+-keep class kotlinx.coroutines.** { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Kotlin Metadata (Reflection ke liye zaroori)
+-keep class kotlin.Metadata { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Enums ko obfuscate hone se bachayein (warna valueOf() crash karega)
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ==========================================
+# 2. Aapki App ki Main Classes & ViewModels
+# ==========================================
+-keep class com.example.billing.MainActivity { *; }
+-keep class * extends androidx.lifecycle.ViewModel { *; }
+
+# ==========================================
+# 3. Koin (Dependency Injection)
+# ==========================================
+-keep class org.koin.** { *; }
+-keep class com.example.billing.di.** { *; }
+
+# ==========================================
+# 4. Kotlin Serialization & Navigation
+# ==========================================
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+-keep class kotlinx.serialization.** { *; }
+-keep @kotlinx.serialization.Serializable class * { *; }
+-keepclassmembers class * {
+    *** Companion;
+}
+-keepclasseswithmembers class * {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep class **$$serializer { *; }
+
+# ==========================================
+# 5. SQLDelight (Database)
+# ==========================================
+# Generated database aur queries ko delete hone se bachayein
+-keep class com.example.billing.BillingDatabase { *; }
+-keep class com.example.billing.*Queries { *; }
+-keep class app.cash.sqldelight.** { *; }

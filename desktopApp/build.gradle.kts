@@ -36,5 +36,11 @@ compose.desktop {
                 upgradeUuid = "75371b93-0175-4aec-9fa4-abc3738337fb"
             }
         }
+
+        buildTypes.release.proguard {
+            configurationFiles.from("proguard-rules.pro")
+            isEnabled.set(true)
+        }
+
     }
 }

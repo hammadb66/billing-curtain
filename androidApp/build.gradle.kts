@@ -25,6 +25,15 @@ android {
     namespace = "com.example.billing"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("D:\\Billing\\my-billing-key.jks")
+            storePassword = "Billing@2026"
+            keyAlias = "my-key-billing"
+            keyPassword = "Billing@2026"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.billing"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -39,7 +48,10 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
